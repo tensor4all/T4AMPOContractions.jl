@@ -1,5 +1,5 @@
-import TensorCrossInterpolation as TCI
-using TensorCrossInterpolation
+import T4AMPOContractions as TCI
+using T4AMPOContractions
 using Random
 # TODO remove
 using Test
@@ -111,7 +111,7 @@ end
     end
 
     @testset "Contraction, batchevaluate" begin
-        import TensorCrossInterpolation: TensorTrain
+        import T4AMPOContractions: TensorTrain
 
         N = 4
         bonddims_a = [1, 2, 3, 2, 1]

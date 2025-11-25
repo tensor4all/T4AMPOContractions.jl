@@ -1,5 +1,5 @@
-name = "TensorCrossInterpolation"
-uuid = "b261b2ec-6378-4871-b32e-9173bb050604"
+name = "T4AMPOContractions"
+uuid = "953bfbbc-cb66-4acc-a854-9589b1f489b2"
 authors = ["Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
 version = "0.9.17"
 

@@ -1,14 +1,14 @@
-using TensorCrossInterpolation
+using T4AMPOContractions
 using Documenter
 
-DocMeta.setdocmeta!(TensorCrossInterpolation, :DocTestSetup, :(using TensorCrossInterpolation); recursive=true)
+DocMeta.setdocmeta!(T4AMPOContractions, :DocTestSetup, :(using T4AMPOContractions); recursive=true)
 
 makedocs(;
-    modules=[TensorCrossInterpolation],
+    modules=[T4AMPOContractions],
     authors="Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de> and contributors",
-    sitename="TensorCrossInterpolation.jl",
+    sitename="T4AMPOContractions.jl",
     format=Documenter.HTML(;
-        canonical="https://github.com/tensor4all/TensorCrossInterpolation.jl",
+        canonical="https://github.com/tensor4all/T4AMPOContractions.jl",
         edit_link="main",
         assets=String[]),
     pages=[
@@ -19,6 +19,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/tensor4all/TensorCrossInterpolation.jl.git",
+    repo="github.com/tensor4all/T4AMPOContractions.jl.git",
     devbranch="main",
 )

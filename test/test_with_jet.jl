@@ -1,5 +1,5 @@
 using JET
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 @testset "JET" begin
     if VERSION ≥ v"1.10"

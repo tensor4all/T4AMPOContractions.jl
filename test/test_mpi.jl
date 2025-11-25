@@ -1,6 +1,6 @@
 using MPI
 using Test
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 @testset "MPI" begin
     @testset "MPI init" begin

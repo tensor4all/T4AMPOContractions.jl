@@ -1,5 +1,5 @@
 using Test
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 @testset "IndexSet tests" begin
     is = TCI.IndexSet{Vector{Int}}()

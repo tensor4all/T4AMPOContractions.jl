@@ -1,4 +1,4 @@
-module TensorCrossInterpolation
+module T4AMPOContractions
 
 using LinearAlgebra
 using EllipsisNotation
