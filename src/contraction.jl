@@ -1,19 +1,14 @@
-# Import base functionality from T4ATensorCI
-import T4ATensorCI: Contraction as ContractionBase, contract_naive, contract_TCI, contract_zipup
-import T4ATensorCI: _contract as _contract_base, _localdims as _localdims_base, _getindex, _unfuse_idx, _fuse_idx
-import T4ATensorCI: _reshape_fusesites, _reshape_splitsites, _findinitialpivots
-
-# Re-export Contraction with the same name (it's identical)
-const Contraction = ContractionBase
-export Contraction
-
-# Re-export base contract functions
-export contract_naive, contract_TCI, contract_zipup
-
-# Contraction struct is imported from T4ATensorCI above
-# Use imported helper functions
-const _localdims = _localdims_base
-const _contract = _contract_base
+"""
+Contraction of two TTOs
+Optionally, the contraction can be done with a function applied to the result.
+"""
+struct Contraction{T} <: BatchEvaluator{T}
+    mpo::NTuple{2,TensorTrain{T,4}}
+    leftcache::Dict{Vector{Tuple{Int,Int}},Matrix{T}}
+    rightcache::Dict{Vector{Tuple{Int,Int}},Matrix{T}}
+    f::Union{Nothing,Function}
+    sitedims::Vector{Vector{Int}}
+end
 
 
 Base.length(obj::Contraction) = length(obj.mpo[1])
@@ -66,53 +61,37 @@ function Contraction(
     )
 end
 
-# Use imported helper functions from T4ATensorCI
-const _localdims = _localdims_base
-const _contract = _contract_base
+_localdims(obj::TensorTrain{<:Any,4}, n::Int)::Tuple{Int,Int} =
+    (size(obj[n], 2), size(obj[n], 3))
+_localdims(obj::Contraction{<:Any}, n::Int)::Tuple{Int,Int} =
+    (size(obj.mpo[1][n], 2), size(obj.mpo[2][n], 3))
 
-# Without useless allocations
-#=
+_getindex(x, indices) = ntuple(i -> x[indices[i]], length(indices))
+
 function _contract(
-    a::AbstractArray,
-    b::AbstractArray,
+    a::AbstractArray{T1,N1},
+    b::AbstractArray{T2,N2},
     idx_a::NTuple{n1,Int},
     idx_b::NTuple{n2,Int}
-) where {n1,n2}
-    N1 = ndims(a); N2 = ndims(b)
+) where {T1,T2,N1,N2,n1,n2}
     length(idx_a) == length(idx_b) || error("length(idx_a) != length(idx_b)")
-    length(unique(idx_a)) == length(idx_a) || error("idx_a contains duplicates")
-    length(unique(idx_b)) == length(idx_b) || error("idx_b contains duplicates")
-    all(1 .<= idx .<= N1 for idx in idx_a) || error("idx_a out of range")
-    all(1 .<= idx .<= N2 for idx in idx_b) || error("idx_b out of range")
+    # check if idx_a contains only unique elements
+    length(unique(idx_a)) == length(idx_a) || error("idx_a contains duplicate elements")
+    # check if idx_b contains only unique elements
+    length(unique(idx_b)) == length(idx_b) || error("idx_b contains duplicate elements")
+    # check if idx_a and idx_b are subsets of 1:N1 and 1:N2
+    all(1 <= idx <= N1 for idx in idx_a) || error("idx_a contains elements out of range")
+    all(1 <= idx <= N2 for idx in idx_b) || error("idx_b contains elements out of range")
 
-    rest_idx_a = Tuple(setdiff(1:N1, idx_a))
-    rest_idx_b = Tuple(setdiff(1:N2, idx_b))
+    rest_idx_a = setdiff(1:N1, idx_a)
+    rest_idx_b = setdiff(1:N2, idx_b)
 
-    # create lazy permuted-wrappers (no copy)
-    Aperm = PermutedDimsArray(a, (rest_idx_a..., idx_a...))
-    Bperm = PermutedDimsArray(b, (idx_b..., rest_idx_b...))
+    amat = reshape(permutedims(a, (rest_idx_a..., idx_a...)), prod(_getindex(size(a), rest_idx_a)), prod(_getindex(size(a), idx_a)))
+    bmat = reshape(permutedims(b, (idx_b..., rest_idx_b...)), prod(_getindex(size(b), idx_b)), prod(_getindex(size(b), rest_idx_b)))
 
-    # sizes
-    sizes_Aperm = size(Aperm)
-    sizes_Bperm = size(Bperm)
-
-    M = prod(sizes_Aperm[1:length(rest_idx_a)])           # rows of amat
-    K = prod(sizes_Aperm[length(rest_idx_a)+1:end])       # contracted dim
-    # For Bperm, first dims are contracted dims, rest are rest_idx_b
-    N = prod(sizes_Bperm[length(idx_b)+1:end])            # cols of bmat
-
-    # reshape wrappers into 2-D views (these are views/wrappers whenever strides permit)
-    amat = reshape(Aperm, M, K)   # M×K view
-    bmat = reshape(Bperm, K, N)   # K×N view
-
-    # preallocate output matrix and perform in-place multiply
-    Cmat = similar(amat, promote_type(eltype(a), eltype(b)), M, N)
-    mul!(Cmat, amat, bmat)   # will call BLAS.gemm when strides are suitable
-
-    # reshape back to the expected tensor shape
-    return reshape(Cmat, _getindex(size(a), rest_idx_a)..., _getindex(size(b), rest_idx_b)...)
+    return reshape(amat * bmat, _getindex(size(a), rest_idx_a)..., _getindex(size(b), rest_idx_b)...)
 end
-=#
+
 function _unfuse_idx(obj::Contraction{T}, n::Int, idx::Int)::Tuple{Int,Int} where {T}
     return reverse(divrem(idx - 1, _localdims(obj, n)[1]) .+ 1)
 end
