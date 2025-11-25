@@ -17,7 +17,7 @@ using Pkg; Pkg.add("T4AMPOContractions")
 ## Related modules
 
 
-### [T4ATensorCI.jl](https://github.com/tensor4all/tciitensorconversion.jl)
+### [T4ATensorCI.jl](https://github.com/tensor4all/T4ATensorCI.jl)
 
 ## Contributions
 

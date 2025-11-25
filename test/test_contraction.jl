@@ -70,7 +70,7 @@ end
         @test vec(reshape(permutedims(a, (2, 1, 3)), 3, :) * reshape(permutedims(b, (1, 3, 2)), :, 5)) ≈ vec(ab)
     end
 
-    @testset "rightenvironment" begin
+    @testset "zipup environment" begin
         a = rand(2, 3, 4)
         b = rand(2, 5, 4)
         ab = TCI._contract(a, b, (1, 3), (1, 3))
@@ -78,23 +78,6 @@ end
     end
 
     @testset "MPO-MPO contraction (TCI, naive)" for f in [nothing, x -> 2 * x], algorithm in [:TCI, :naive]
-        #==
-        N = 4
-        bonddims_a = [1, 2, 3, 2, 1]
-        bonddims_b = [1, 2, 3, 2, 1]
-        localdims1 = [2, 2, 2, 2]
-        localdims2 = [3, 3, 3, 3]
-        localdims3 = [2, 2, 2, 2]
-
-        a = TensorTrain{ComplexF64,4}([
-            rand(ComplexF64, bonddims_a[n], localdims1[n], localdims2[n], bonddims_a[n+1])
-            for n = 1:N
-        ])
-        b = TensorTrain{ComplexF64,4}([
-            rand(ComplexF64, bonddims_b[n], localdims2[n], localdims3[n], bonddims_b[n+1])
-            for n = 1:N
-        ])
-        ==#
         N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
 
         if f !== nothing && algorithm === :naive
@@ -112,22 +95,7 @@ end
 
     @testset "Contraction, batchevaluate" begin
         import T4AMPOContractions: TensorTrain
-
-        N = 4
-        bonddims_a = [1, 2, 3, 2, 1]
-        bonddims_b = [1, 2, 3, 2, 1]
-        localdims1 = [2, 2, 2, 2]
-        localdims2 = [3, 3, 3, 3]
-        localdims3 = [2, 2, 2, 2]
-
-        a = TensorTrain{ComplexF64,4}([
-            rand(ComplexF64, bonddims_a[n], localdims1[n], localdims2[n], bonddims_a[n+1])
-            for n = 1:N
-        ])
-        b = TensorTrain{ComplexF64,4}([
-            rand(ComplexF64, bonddims_b[n], localdims2[n], localdims3[n], bonddims_b[n+1])
-            for n = 1:N
-        ])
+        N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
 
         ab = TCI.Contraction(a, b)
         leftindexset = [[1]]
@@ -150,30 +118,9 @@ end
             res = TCI.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 1], [1, 0]])
             @test vec(ref_multiindex[:, :, 1, 1, :, :]) ≈ vec(res)
         end
-
-        #res = TCI.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[1], [1]])
-        #@test vec(ref[:, 1, 1, :]) ≈ vec(res)
-
-
     end
 
     @testset "MPO-MPS contraction (TCI, naive)" for f in [nothing, x -> 2 * x], algorithm in [:TCI, :naive]
-        #==
-        N = 4
-        bonddims_a = [1, 2, 3, 2, 1]
-        bonddims_b = [1, 2, 3, 2, 1]
-        localdims1 = [3, 3, 3, 3]
-        localdims2 = [3, 3, 3, 3]
-
-        a = TensorTrain{ComplexF64,4}([
-            rand(ComplexF64, bonddims_a[n], localdims1[n], localdims2[n], bonddims_a[n+1])
-            for n = 1:N
-        ])
-        b = TensorTrain{ComplexF64,3}([
-            rand(ComplexF64, bonddims_b[n], localdims2[n], bonddims_b[n+1])
-            for n = 1:N
-        ])
-        ==#
         N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
 
         if f !== nothing && algorithm === :naive
@@ -398,25 +345,15 @@ end
     @testset "MPO-MPO contraction (zipup, fit)" for algorithm in [:zipup, :fit], method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
-        #println([size(a[i]) for i in 1:length(a)])
-        #println([size(b[i]) for i in 1:length(b)])
-        #println("$maxbonddim with $method")
-        ab = contract(a, b; algorithm, method, maxbonddim, nsweeps, tolerance=0.0)
-        #println([size(a[i]) for i in 1:length(a)])
-        #println([size(b[i]) for i in 1:length(b)])
-        #println([size(ab[i]) for i in 1:length(ab)])
 
-        # println("$algorithm, $method, $maxbonddim, $nsweeps")
+        ab = contract(a, b; algorithm, method, maxbonddim, nsweeps, tolerance=0.0)
+
         @test _tomat(ab) ≈ _tomat(a) * _tomat(b)
     end
 
     @testset "MPO-MPO contraction inverse" for method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
-        #println([size(a[i]) for i in 1:length(a)])
-        #println([size(b[i]) for i in 1:length(b)])
-        #println("$maxbonddim with $method")
-        # println(algorithm, method, maxbonddim)
 
         Gamma_a, Lambda_a = TCI.extract_vidal(a.sitetensors)
         Gamma_b, Lambda_b = TCI.extract_vidal(b.sitetensors)
@@ -425,11 +362,7 @@ end
         Psib, Vb = TCI.vidal_to_inv(Gamma_b, Lambda_b)
 
         ab = contract(a, b; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
-        #println([size(a[i]) for i in 1:length(a)])
-        #println([size(b[i]) for i in 1:length(b)])
-        #println([size(ab[i]) for i in 1:length(ab)])
 
-        # println("fit, $method, $maxbonddim, $nsweeps")
         @test _tomat(ab) ≈ _tomat(a) * _tomat(b)
     end
 
@@ -439,7 +372,7 @@ end
         N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
 
         ab = contract(a, b; algorithm, method, maxbonddim, nsweeps, tolerance=0.0)
-        # println("$algorithm, $method, $maxbonddim, $nsweeps")
+
         @test _tovec(ab) ≈ _tomat(a) * _tovec(b)
     end
 end
