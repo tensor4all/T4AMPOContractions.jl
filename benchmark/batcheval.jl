@@ -1,4 +1,4 @@
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 using BenchmarkTools
 using Random
 

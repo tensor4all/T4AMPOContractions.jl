@@ -1,6 +1,6 @@
 # Written by Satoshi Terasaki
 
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 using Plots
 using LinearAlgebra
 BLAS.set_num_threads(1)

@@ -1,4 +1,4 @@
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 using Test
 using LinearAlgebra
 
@@ -16,9 +16,10 @@ include("test_batcheval.jl")
 include("test_cachedtensortrain.jl")
 include("test_tensorci1.jl")
 include("test_tensorci2.jl")
+include("test_mpi.jl")
 include("test_tensortrain.jl")
-include("test_conversion.jl")
 include("test_contraction.jl")
+include("test_conversion.jl")
 include("test_integration.jl")
 include("test_globalsearch.jl")
 

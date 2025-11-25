@@ -1,5 +1,5 @@
 using Test
-import TensorCrossInterpolation: TensorCI1, TensorCI2, sitedims, linkdims, rank,
+import T4AMPOContractions: TensorCI1, TensorCI2, sitedims, linkdims, rank,
     addglobalpivot!, crossinterpolate1, crossinterpolate2, optimize!, MatrixACA, rrlu,
     nrows, ncols, evaluate, left, right, pivoterror, tensortrain
 

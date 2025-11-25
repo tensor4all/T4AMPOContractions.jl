@@ -193,7 +193,7 @@ function getPiJset(tci::TensorCI1{V}, p::Int) where {V}
 end
 
 """
-    buildPiAt(tci::TensorCrossInterpolation{V}, p::Int)
+    buildPiAt(tci::TensorCI1{V}, p::Int)
 
 Build a 4-legged ``\\Pi`` tensor at site `p`. Indices are in the order ``i, u_p, u_{p + 1}, j``, as in the TCI paper.
 """

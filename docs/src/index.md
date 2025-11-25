@@ -1,10 +1,10 @@
 ```@meta
-CurrentModule = TensorCrossInterpolation
+CurrentModule = T4AMPOContractions
 ```
 
-# TensorCrossInterpolation
+# T4AMPOContractions
 
-This is the documentation for [TensorCrossInterpolation](https://github.com/tensor4all/TensorCrossInterpolation.jl).
+This is the documentation for [T4AMPOContractions](https://github.com/tensor4all/T4AMPOContractions.jl).
 
 With the user manual and usage examples below, users should be able to use this library as a "black box" in most cases. Detailed documentation of (almost) all methods can be found in the [Documentation](@ref) section, and [Implementation](@ref) contains a detailed explanation of this implementation of TCI.
 
@@ -13,7 +13,7 @@ With the user manual and usage examples below, users should be able to use this 
 The most convenient way to create a TCI is [`crossinterpolate2`](@ref). For example, consider the lorentzian in 5 dimensions, i.e. $f(\mathbf v) = 1/(1 + \mathbf v^2)$ on a mesh $\mathbf{v} \in \{1, 2, ..., 10\}^5$.
 $f$ can be interpolated as follows:
 ```@example simple
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 f(v) = 1/(1 + v' * v)
 localdims = fill(10, 5)    # There are 5 tensor indices, each with values 1...10
 tolerance = 1e-8
@@ -27,7 +27,7 @@ To evaluate the TCI approximation, simply call it the same way as the original f
 println("Original function: $(f([1, 2, 3, 4, 5]))")
 println("TCI approximation: $(tci([1, 2, 3, 4, 5]))")
 ```
-For easy integration into tensor network algorithms, the tensor train can be converted to ITensors MPS format. If you're using julia version 1.9 or later, an extension is automatically loaded if both `TensorCrossInterpolation.jl` and `ITensors.jl` are present.
+For easy integration into tensor network algorithms, the tensor train can be converted to ITensors MPS format. If you're using julia version 1.9 or later, an extension is automatically loaded if both `T4AMPOContractions.jl` and `ITensors.jl` are present.
 For older versions of julia, use the package using [TCIITensorConversion.jl](https://github.com/tensor4all/tciitensorconversion.jl).
 
 ## Sums and Integrals
@@ -152,7 +152,7 @@ it may be beneficial to cache the results of function evaluations.
 We can wrap your function as follows:
 
 ```Julia
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 # Local dimensions of TCI
 localdims = [2, 2, 2, 2]
@@ -177,8 +177,8 @@ By default, in TCI2, the function to be interpolated is evaluated for a single i
 To utilize this feature, your function must inherit from  `TCI.BatchEvaluator{T}` and supports two additional types of function calls for evaluating $\mathrm{T}$ (one local index) and $\Pi$ tensors (two local indices):
 
 ```julia
-import TensorCrossInterpolation as TCI
-import TensorCrossInterpolation: MultiIndex
+import T4AMPOContractions as TCI
+import T4AMPOContractions: MultiIndex
 
 struct TestFunction{T} <: TCI.BatchEvaluator{T}
     localdims::Vector{Int}
@@ -254,8 +254,8 @@ julia --project=@. -t 6 samplecode.jl
 ```
 
 ```Julia
-import TensorCrossInterpolation as TCI
-import TensorCrossInterpolation: MultiIndex
+import T4AMPOContractions as TCI
+import T4AMPOContractions: MultiIndex
 
 struct TestFunction{T} <: TCI.BatchEvaluator{T}
     localdims::Vector{Int}
@@ -319,7 +319,7 @@ end
 If your function is thread-safe, you can parallelize your function readily using `ThreadedBatchEvaluator` as follows (the internal implementation is identical to the sample code shown above):
 
 ```Julia
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 # Evaluation takes 1 millisecond, make sure the function is thread-safe.
 function f(x)
@@ -362,8 +362,8 @@ Then, you can implement a call method for the global pivot finder with this sign
 Here's an example of a custom global pivot finder that randomly selects pivots:
 
 ```julia
-import TensorCrossInterpolation as TCI
-import TensorCrossInterpolation: GlobalPivotSearchInput, MultiIndex, crossinterpolate2
+import T4AMPOContractions as TCI
+import T4AMPOContractions: GlobalPivotSearchInput, MultiIndex, crossinterpolate2
 import Random: AbstractRNG
 
 struct CustomGlobalPivotFinder <: TCI.AbstractGlobalPivotFinder

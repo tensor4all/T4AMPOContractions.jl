@@ -1,26 +1,24 @@
-# TensorCrossInterpolation
+# T4AMPOContractions
 
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://tensor4all.github.io/TensorCrossInterpolation.jl/dev)
-[![CI](https://github.com/tensor4all/TensorCrossInterpolation.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/tensor4all/TensorCrossInterpolation.jl/actions/workflows/CI.yml)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://tensor4all.github.io/T4AMPOContractions.jl/dev)
+[![CI](https://github.com/tensor4all/T4AMPOContractions.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/tensor4all/T4AMPOContractions.jl/actions/workflows/CI.yml)
 
-The [TensorCrossInterpolation module](https://github.com/tensor4all/TensorCrossInterpolation.jl) implements the *tensor cross interpolation* algorithm for efficient interpolation of multi-index tensors and multivariate functions.
-
-This algorithm is used in the *quantics tensor cross interpolation* (QTCI) method for exponentially efficient interpolation of functions with scale separation. QTCI is implemented in the [QuanticsTCI.jl](https://github.com/tensor4all/QuanticsTCI.jl) module.
+The [T4AMPOContractions module](https://github.com/tensor4all/T4AMPOContractions.jl) implements MPO (Matrix Product Operator) contraction algorithms for tensor networks.
 
 ## Installation
 
-This module has been registered in the General registry. It can be installed by typing the following in a Julia REPL:
+This module can be installed by typing the following in a Julia REPL:
 ```julia
-using Pkg; Pkg.add("TensorCrossInterpolation")
+using Pkg; Pkg.add("T4AMPOContractions")
 ```
 
 ## Usage
 
-*This section only contains the bare minimum to get you started. An example with more explanation can be found in the [user manual](https://tensor4all.github.io/TensorCrossInterpolation.jl/dev).*
+*This section only contains the bare minimum to get you started. An example with more explanation can be found in the [user manual](https://tensor4all.github.io/T4AMPOContractions.jl/dev).*
 
-Given a multivariate function `f`, the function `crossinterpolate2` will generate a tensor cross interpolation for `f`. For example, to interpolate the 8d lorentzian $f(\mathbf v) = 1/(1 + \mathbf v^2)$ on an 8-dimensional lattice of integers, $\mathbf{v} \in \{1, 2, ..., 10\}^8$:
+Given two MPOs (Matrix Product Operators), the function `contract` will compute their contraction. For example:
 ```julia
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as MPOC
 f(v) = 1/(1 + v' * v)
 # There are 8 tensor indices, each with values 1...10
 localdims = fill(10, 8)
@@ -31,7 +29,7 @@ Note:
 - `f` is defined as a function that takes a single `Vector` of integers.
 - The return type of `f` (`Float64` in this case) must be stated explicitly in the call to `crossinterpolate2`.
 
-The resulting `TensorCI2` object can be further manipulated, see [user manual](https://tensor4all.github.io/TensorCrossInterpolation.jl/dev).
+The resulting `TensorCI2` object can be further manipulated, see [user manual](https://tensor4all.github.io/T4AMPOContractions.jl/dev).
 To evaluate the TCI interpolation, simply call your `TensorCI2` object like you would call the original function:
 ```julia
 originalvalue = f([1, 2, 3, 4, 5, 6, 7, 8])
@@ -43,7 +41,7 @@ sumvalue = sum(tci)
 ```
 
 ## Online user manual
-An example with more explanation can be found in the [user manual](https://tensor4all.github.io/TensorCrossInterpolation.jl/dev).
+An example with more explanation can be found in the [user manual](https://tensor4all.github.io/T4AMPOContractions.jl/dev).
 
 ## Related modules
 
@@ -60,8 +58,8 @@ A module that implements the *quantics representation* and combines it with TCI 
 ## Contributions
 
 - If you are having have technical trouble, feel free to contact me directly.
-- Feature requests and bug reports are always welcome, feel free to open an [issue](https://github.com/tensor4all/TensorCrossInterpolation.jl/-/issues) for those.
-- If you have implemented something that might be useful for others, we'd appreciate a [merge request](https://github.com/tensor4all/TensorCrossInterpolation.jl/-/merge_requests)!
+- Feature requests and bug reports are always welcome, feel free to open an [issue](https://github.com/tensor4all/T4AMPOContractions.jl/-/issues) for those.
+- If you have implemented something that might be useful for others, we'd appreciate a [merge request](https://github.com/tensor4all/T4AMPOContractions.jl/-/merge_requests)!
 
 ## Authors
 

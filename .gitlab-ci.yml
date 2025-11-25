@@ -65,8 +65,8 @@ julia test:
         Pkg.develop(PackageSpec(path=pwd()))
         Pkg.instantiate()
         using Documenter: doctest
-        using TensorCrossInterpolation
-        doctest(TensorCrossInterpolation)
+        using T4AMPOContractions
+        doctest(T4AMPOContractions)
         include("docs/make.jl")'
 doctest:
   image: julia:1.6
@@ -83,8 +83,8 @@ pages:
         Pkg.develop(PackageSpec(path=pwd()))
         Pkg.instantiate()
         using Documenter: doctest
-        using TensorCrossInterpolation
-        doctest(TensorCrossInterpolation)
+        using T4AMPOContractions
+        doctest(T4AMPOContractions)
         include("docs/make.jl")'
     - mkdir -p public
     - mv docs/build public/dev

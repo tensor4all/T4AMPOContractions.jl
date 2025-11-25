@@ -1,5 +1,5 @@
 using Test
-import TensorCrossInterpolation: forwardsweep
+import T4AMPOContractions: forwardsweep
 
 @testset "SweepStrategies" begin
     iters = 1:5

@@ -1,4 +1,4 @@
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 import LinearAlgebra as LA
 using Random
 using Zygote
@@ -251,5 +251,9 @@ end
 
     tt3 = TCI.TensorTrain{Float64,3}(tt2, localdims)
     @test TCI.fulltensor(tt1) ≈ TCI.fulltensor(tt3)
+end
+
+@testset "factorize" begin
+
 end
 

@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = TensorCrossInterpolation
+CurrentModule = T4AMPOContractions
 ```
 
 # Implementation

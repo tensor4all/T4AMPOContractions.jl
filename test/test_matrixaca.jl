@@ -1,9 +1,9 @@
 using Test
 
-using TensorCrossInterpolation
+using T4AMPOContractions
 using LinearAlgebra
 
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 @testset "MatrixACA" begin
     @testset "3x3 matrix, real" begin

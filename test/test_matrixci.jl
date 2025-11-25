@@ -1,8 +1,8 @@
 using Test
 
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 using LinearAlgebra
-import TensorCrossInterpolation: nrows, ncols, addpivot!, MatrixCI, evaluate
+import T4AMPOContractions: nrows, ncols, addpivot!, MatrixCI, evaluate
 
 @testset "MatrixCI" begin
     @testset "Matrix util" begin

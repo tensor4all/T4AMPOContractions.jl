@@ -1,5 +1,5 @@
 using Test
-import TensorCrossInterpolation: maxabs, optfirstpivot, pushunique!, isconstant, randomsubset
+import T4AMPOContractions: maxabs, optfirstpivot, pushunique!, isconstant, randomsubset
 
 @testset "Test updatemax" begin
     s = 1.0

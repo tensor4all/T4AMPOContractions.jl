@@ -1,5 +1,5 @@
 using Test
-import TensorCrossInterpolation as TCI
+import T4AMPOContractions as TCI
 
 
 struct NonBatchEvaluator{T} <: Function end
