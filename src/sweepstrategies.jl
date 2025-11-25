@@ -1,6 +1,3 @@
-function forwardsweep(sweepstrategy::Symbol, iteration::Int)
-    return (
-        (sweepstrategy == :forward) ||
-        (sweepstrategy == :backandforth && isodd(iteration))
-    )
-end
+# Import forwardsweep from T4ATensorCI (identical implementation)
+import T4ATensorCI: forwardsweep
+export forwardsweep

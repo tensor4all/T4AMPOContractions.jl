@@ -1,3 +1,10 @@
+# Import base types and functions from T4ATensorCI
+# Note: MultiIndex, AbstractTensorTrain are defined in abstracttensortrain.jl
+# Note: Many functions like filltensor, kronecker, etc. are defined in this file (with MPI additions)
+# We don't import filltensor since we redefine it with MPI support
+import T4ATensorCI: MatrixLUCI, kronecker
+import T4ATensorCI: AbstractGlobalPivotFinder, GlobalPivotSearchInput
+
 """
     mutable struct TensorCI2{ValueType} <: AbstractTensorTrain{ValueType}
 
@@ -706,7 +713,7 @@ function parallelfullsearch(::Type{ValueType}, f, tci, Icombined, Jcombined, tea
         Pi = zeros(length(Icombined_copy), length(Jcombined_copy))
         sizes = vcat(row_chunks', col_chunks')
         counts = vec(prod(sizes, dims=1))
-        Pi_vbuf = VBuffer(Pi, counts)
+        Pi_vbuf = MPI.VBuffer(Pi, counts)
         MPI.Allgatherv!(localPi, Pi_vbuf, subcomm)
         t2 = time_ns()
     end

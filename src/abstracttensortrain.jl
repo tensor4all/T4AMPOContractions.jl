@@ -1,10 +1,6 @@
+# LocalIndex and MultiIndex are defined in the main module
 # It is necessary to nest vectors here, as these vectors will frequently grow
 # by adding elements. Using matrices, the entire matrix would have to be copied.
-# These type definitions are mostly to make the code below more readable, as
-# Vector{Vector{Vector{...}}} constructions make it difficult to understand
-# the meaning of each dimension.
-const LocalIndex = Int
-const MultiIndex = Vector{LocalIndex}
 
 """
     abstract type AbstractTensorTrain{V} <: Function end

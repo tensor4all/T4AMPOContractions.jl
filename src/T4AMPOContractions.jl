@@ -17,31 +17,30 @@ import Base: isempty, iterate, getindex, lastindex, broadcastable
 import Base: length, size, sum
 import Random
 
+# Define constants before importing T4ATensorCI to avoid conflicts
+const LocalIndex = Int
+const MultiIndex = Vector{LocalIndex}
+
+# Import T4ATensorCI and re-export its public API
+using T4ATensorCI
+# Import internal types that are needed by included files (but not types defined in abstracttensortrain.jl)
+import T4ATensorCI: IndexSet, MatrixACA, MatrixCI, MatrixLUCI, BatchEvaluator
+# Re-export all public functions and types from T4ATensorCI
 export crossinterpolate1, crossinterpolate2, optfirstpivot
 export tensortrain, TensorTrain, sitedims, evaluate
+# Note: contract is extended below in contraction.jl
 
-export contract
-
-include("util.jl")
+# Files with MPI additions - these will import from T4ATensorCI and add MPI support
 include("sweepstrategies.jl")
-include("abstractmatrixci.jl")
-include("matrixci.jl")
-include("matrixaca.jl")
 include("matrixlu.jl")
-include("matrixluci.jl")
-include("indexset.jl")
 include("abstracttensortrain.jl")
-include("cachedtensortrain.jl")
-include("batcheval.jl")
-include("cachedfunction.jl")
 include("tensortrain.jl")
 include("tensorci1.jl")
-include("globalpivotfinder.jl")
 include("tensorci2.jl")
-include("conversion.jl")
 include("integration.jl")
 include("contraction.jl")
-include("globalsearch.jl")
+
+# Unique to T4AMPOContractions
 include("mpi.jl")
 
 end
