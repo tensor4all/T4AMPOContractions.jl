@@ -33,6 +33,17 @@ function linkdims(tt::AbstractTensorTrain{V})::Vector{Int} where {V}
 end
 
 """
+    function linkdims(tt::AbstractTensorTrain{V})::Vector{Int} where {V}
+
+Bond dimensions along the links between ``T`` tensors in the tensor train.
+
+See also: [`rank`](@ref)
+"""
+function linkdims(tt::Vector{Array{V, N}})::Vector{Int} where {V, N}
+    return [size(T, 1) for T in tt[2:end]]
+end
+
+"""
     function linkdim(tt::AbstractTensorTrain{V}, i::Int)::Int where {V}
 
 Bond dimensions at the link between tensor ``T_i`` and ``T_{i+1}`` in the tensor train.
@@ -357,6 +368,58 @@ function rightcanonicalize!(tt::AbstractTensorTrain{ValueType}) where {ValueType
         tmptt .= tmptt * Matrix(R)
         tt[i-1] = reshape(tmptt, size(tt[i-1], 1), d1, d2, size(tt[i-1], 4))  # Reshape back
     end
+end
+
+function extract_vidal(tt::Vector{Array{ValueType, N}}) where {ValueType, N}
+    n = length(tt)
+    V = Vector{Array{ValueType, 2}}(undef, n-1)
+    V_1 = Vector{Array{ValueType, 2}}(undef, n-1)
+    A = deepcopy(tt)
+
+    # TODO "centercanonicalize!(A, n)"
+    for i in 1:n-1
+        Q, R = qr(reshape(A[i], prod(size(A[i])[1:3]), size(A[i])[end]))
+        A[i] = reshape(Matrix(Q), size(A[i])...)
+        A[i+1] = _contract(Matrix(R), A[i+1], (2,), (1,))
+    end
+
+    for i in n:-1:2
+        left, diamond, right, _, _ = _factorize(
+            reshape(A[i], size(A[i])[1], prod(size(A[i])[2:4])),
+            :SVD; tolerance=0.0, maxbonddim=size(A[i])[1], diamond=true
+        )
+
+        V[i-1] = Diagonal(diamond)
+        V_1[i-1] = Diagonal(diamond.^-1)
+
+        A[i] = reshape(right, size(A[i])...)
+        A[i-1] = _contract(A[i-1], left*V[i-1], (4,), (1,))
+    end
+
+    for i in 1:n-1
+        A[i] = _contract(A[i], V_1[i], (4,), (1,))
+    end
+
+    return A, V
+end
+
+function vidal_to_inv(G::Vector{Array{ValueType, 4}}, L::Vector{Matrix{ValueType}}) where {ValueType}
+    n = length(G)
+    Psi = Vector{Array{ValueType, 4}}(undef, n)
+    V = Vector{Array{ValueType, 2}}(undef, n)
+
+    Psi[1] = _contract(G[1], L[1], (4,), (1,))
+    for i in 2:n-1
+        Psi[i] = _contract(L[i-1], G[i], (2,), (1,))
+        Psi[i] = _contract(Psi[i], L[i], (4,), (1,))
+    end
+    Psi[n] = _contract(L[n-1], G[n], (2,), (1,))
+
+    for i in 1:n-1
+        V[i] = Diagonal(diag(L[i]).^-1)
+    end
+
+    return Psi, V
 end
 
 

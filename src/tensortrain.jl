@@ -94,7 +94,7 @@ end
 
 function _factorize(
     A::AbstractMatrix{V}, method::Symbol; tolerance::Float64, maxbonddim::Int, leftorthogonal::Bool=false, diamond::Bool=false, normalizeerror=true, q::Int=0, p::Int=16
-)::Union{Tuple{Matrix{V},Matrix{V},Int},Tuple{Matrix{V},Vector{V},Matrix{V},Int}} where {V}
+)::Union{Tuple{Matrix{V},Matrix{V},Int,Float64},Tuple{Matrix{V},Vector{Float64},Matrix{V},Int,Float64},Tuple{Matrix{V},Vector{Float64},Matrix{V},Int},Tuple{Matrix{V},Matrix{V},Int}} where {V}
     reltol = 1e-14
     abstol = 0.0
     if normalizeerror
@@ -104,38 +104,63 @@ function _factorize(
     end
     if method === :LU
         factorization = rrlu(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
-        return left(factorization), right(factorization), npivots(factorization)
+        if npivots(factorization) == maxbonddim # TODO is this conceptually right?
+            disc = Inf
+        else
+            disc = 0.0
+        end
+        return left(factorization), right(factorization), npivots(factorization), disc
     elseif method === :CI
         factorization = MatrixLUCI(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
-        return left(factorization), right(factorization), npivots(factorization)
+        if npivots(factorization) == maxbonddim # TODO is this conceptually right?
+            disc = Inf
+        else
+            disc = 0.0
+        end
+        return left(factorization), right(factorization), npivots(factorization), disc
     elseif method === :SVD
         factorization = LinearAlgebra.svd(A)
         err = [sum(factorization.S[n+1:end] .^ 2) for n in 1:length(factorization.S)]
         normalized_err = err ./ sum(factorization.S .^ 2)
 
         trunci = min(
-            replacenothing(findlast(>(tolerance), Array(factorization.S)), 1),
+            replacenothing(findfirst(<(abstol^2), err), length(err)),
+            replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
             maxbonddim
         )
+
+        if length(factorization.S) > trunci
+            if normalizeerror
+                disc = sqrt(normalized_err[trunci])
+            else
+                disc = sqrt(err[trunci])
+            end
+        else
+            disc = 0.0
+        end
+
         if diamond
             return (
                     Matrix(factorization.U[:, 1:trunci]),
                     factorization.S[1:trunci],
                     Matrix(factorization.Vt[1:trunci, :]),
-                    trunci
+                    trunci,
+                    disc
                 )
         else
             if leftorthogonal
                 return (
                     Matrix(factorization.U[:, 1:trunci]),
                     Matrix(Diagonal(factorization.S[1:trunci]) * factorization.Vt[1:trunci, :]),
-                    trunci
+                    trunci,
+                    disc
                 )
             else
                 return (
                     Matrix(factorization.U[:, 1:trunci] * Diagonal(factorization.S[1:trunci])),
                     Matrix(factorization.Vt[1:trunci, :]),
-                    trunci
+                    trunci,
+                    disc
                 )
             end
         end
@@ -162,24 +187,40 @@ function _factorize(
             factorization = LinearAlgebra.svd(B)
             factorization = SVD((Q*factorization.U)[:,1:maxbonddim], factorization.S[1:maxbonddim], factorization.Vt[1:maxbonddim,:])
         end
+        err = [sum(factorization.S[n+1:end] .^ 2) for n in 1:length(factorization.S)]
+        normalized_err = err ./ sum(factorization.S .^ 2)
+
         trunci = min(
-            replacenothing(findlast(>(tolerance), Array(factorization.S)), 1),
+            replacenothing(findfirst(<(abstol^2), err), length(err)),
+            replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
             maxbonddim
         )
+
+        if length(factorization.S) > trunci
+            if normalizeerror
+                disc = sqrt(normalized_err[trunci])
+            else
+                disc = sqrt(err[trunci])
+            end
+        else
+            disc = 0.0
+        end
+
+
         if diamond
             if invert
                 return (
                     Matrix(factorization.Vt[1:trunci, :]'),
                     factorization.S[1:trunci],
                     Matrix(factorization.U[:, 1:trunci]'),
-                    trunci
+                    trunci, disc
                 )
             else
                 return (
                     Matrix(factorization.U[:, 1:trunci]),
                     factorization.S[1:trunci],
                     Matrix(factorization.Vt[1:trunci, :]),
-                    trunci
+                    trunci, disc
                 )
             end
         else
@@ -188,13 +229,13 @@ function _factorize(
                     return (
                         Matrix(factorization.Vt[1:trunci, :]' * Diagonal(factorization.S[1:trunci])),
                         Matrix(factorization.U[:, 1:trunci]'),
-                        trunci
+                        trunci, disc
                     )
                 else
                     return (
                         Matrix(factorization.U[:, 1:trunci]),
                         Matrix(Diagonal(factorization.S[1:trunci]) * factorization.Vt[1:trunci, :]),
-                        trunci
+                        trunci, disc
                     )
                 end
             else
@@ -202,13 +243,13 @@ function _factorize(
                     return (
                         Matrix(factorization.Vt[1:trunci, :]' * Diagonal(factorization.S[1:trunci])),
                         Matrix(factorization.U[:, 1:trunci]'),
-                        trunci
+                        trunci, disc
                     )
                 else
                     return (
                         Matrix(factorization.U[:, 1:trunci] * Diagonal(factorization.S[1:trunci])),
                         Matrix(factorization.Vt[1:trunci, :]),
-                        trunci
+                        trunci, disc
                     )
                 end
             end
@@ -238,7 +279,7 @@ function compress!(
     # From left to right
     for ell in 1:length(tt)-1
         shapel = size(tt.sitetensors[ell])
-        left, right, newbonddim = _factorize(
+        left, right, newbonddim, _ = _factorize(
             reshape(tt.sitetensors[ell], prod(shapel[1:end-1]), shapel[end]),
             method; tolerance=0.0, maxbonddim=typemax(Int), leftorthogonal=true # no truncation
         )
@@ -248,10 +289,11 @@ function compress!(
         tt.sitetensors[ell+1] = reshape(nexttensor, newbonddim, shaper[2:end]...)
     end
 
+    # println([tt[i] for i in 1:length(tt)])
     # From right to left
     for ell in length(tt):-1:2
         shaper = size(tt.sitetensors[ell])
-        left, right, newbonddim = _factorize(
+        left, right, newbonddim, _ = _factorize(
             reshape(tt.sitetensors[ell], shaper[1], prod(shaper[2:end])),
             method; tolerance, maxbonddim, normalizeerror, leftorthogonal=false
         )
@@ -413,18 +455,4 @@ function diagonalizemps(tt::TensorTrain{V,3})::TensorTrain{V,4} where {V}
         end
     end
     return TensorTrain{V,4}(mpo)
-end
-
-function extractdiagonal(tt::TensorTrain{V,4})::TensorTrain{V,3} where {V}
-    mps = Vector{Array{V,3}}(undef, length(tt))
-    for i in 1:length(mps)
-        T = mps.sitetensors[i]
-        a, b1, b2, c = size(T)
-        @assert b1 == b2 "The MPO is not diagonal in the physical indices."
-        mps[i] = zeros(V, a, b1, c)
-        for k in 1:b1
-            mps[i][:,k,:] .= T[:,k,k,:]
-        end
-    end
-    return TensorTrain{V,3}(mps)
 end
