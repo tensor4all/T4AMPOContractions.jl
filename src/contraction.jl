@@ -828,7 +828,7 @@ function contract_fit(
 
                 i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
                     method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                 tot_disc += disc
@@ -838,7 +838,7 @@ function contract_fit(
             for i in n-1:-1:1
                 i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
                     method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                 tot_disc += disc
@@ -939,6 +939,7 @@ function contract_distr_fit(
     random_env::Bool=false,
     synchedinput::Bool=false,
     synchedoutput::Bool=true,
+    p::Int=0,
     kwargs...
 )::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
@@ -1070,102 +1071,42 @@ function contract_distr_fit(
         # TODO make so that you can either precompute all or only local environments
         if juliarank % 2 == 1 # Precompute right environment if going forward
             for i in last_site:-1:first_site+2
-                if i == n
-                    Rs[i] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; random_env)
-                else
-                    Rs[i] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; R=Rs[i+1], Ri=i, random_env)
-                end
+                rightenvironment!(Rs, A, B, C, i; random_env, p)
             end
         else # Precompute left environment if going backward
-            for i in first_site:last_site-2 # i is never 1
-                Ls[i] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; L=Ls[i-1], Li=i, random_env)
+            for i in first_site:last_site-2
+                leftenvironment!(Ls, A, B, C, i-1; random_env, p)
             end
         end
 
-        # println("Juliarank $juliarank postpre max L: $([isassigned(Ls, i) ? maximum(abs.(Ls[i])) : "not" for i in 1:n])")
-        # println("Juliarank $juliarank postpre max R: $([isassigned(Rs, i) ? maximum(abs.(Rs[i])) : "not" for i in 1:n])")
-
-        time_precompute = (time_ns() - time_precompute)*1e-9
-        # println("Node $juliarank: time_precompute=$time_precompute s")
-
         for sweep in 1:nsweeps
             tot_disc = 0.0
-            time_sweep = time_ns()
 
             if sweep % 2 == juliarank % 2 # Forward
                 for i in first_site:last_site-1
-                    # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
-                    pre_sizesi = size(Psic[i])
-                    pre_sizesip1 = size(Psic[i+1])
-                    time_update = time_ns()
+                    i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                    if i == 1
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == 2
-                        disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == first_site
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
-                    elseif i < n-1
-                        disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
-                    else
-                        disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1)
-                    end
-
-                    time_update = (time_ns() - time_update)*1e-9
-
-                    # println("Juliarank $juliarank step $i time_update=$time_update s, from sizes $(pre_sizesi)-$(pre_sizesip1) to sizes $(size(Psic[i]))-$(size(Psic[i+1]))")
-
-                    # max_disc = max(max_disc, disc)
-                    # println("Juliarank $juliarank step $i Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-                    # println("Juliarank $juliarank step $i Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
+                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                     tot_disc += disc
                 end
             else
                 for i in last_site-1:-1:first_site
-                    # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
-                    pre_sizesi = size(Psic[i])
-                    pre_sizesip1 = size(Psic[i+1])
+                    i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                    time_update = time_ns()
-                    if i == n-1
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == n-2
-                        disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == last_site-1
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
-                    elseif i > 1
-                        disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
-                    else
-                        disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, R=Rs[i+3], Ri=i+2)
-                    end
+                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
-                    time_update = (time_ns() - time_update)*1e-9
-                    # println("Juliarank $juliarank step $i time_update=$time_update s, from sizes $(pre_sizesi)-$(pre_sizesip1) to sizes $(size(Psic[i]))-$(size(Psic[i+1]))")
-                    # println("Juliarank $juliarank step $i Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-                    # println("Juliarank $juliarank step $i Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
-
-                    # max_disc = max(max_disc, disc)
                     tot_disc += disc
                 end
             end
 
-            time_sweep = (time_ns() - time_sweep)*1e-9
-
-            # println("Node $juliarank: sweep $sweep time_sweep=$time_sweep s")
-
-            # println("Juliarank $juliarank after sweep $sweep Xmax: ", [maximum(X[i]) for i in 1:length(X)])
-
-            # println("Juliarank $juliarank sweep $sweep: max_disc = $max_disc")
-
-
-            time_communication = time_ns()
             if MPI.Initialized()
                 if juliarank % 2 == sweep % 2 # Left
                     if juliarank != nprocs
-                        # println("Prima di comm sx, $juliarank ha $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
 
-                        Ls[last_site-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, last_site-1; L=Ls[last_site-2], Li=last_site-1, random_env)
+                        leftenvironment!(Ls, A, B, C, last_site-1; random_env, p)
 
                         sizes = Vector{Int}(undef, 3)
                         reqs = MPI.Isend(collect(size(Ls[last_site-1])), comm; dest=mpirank+1, tag=juliarank)
@@ -1179,30 +1120,30 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, last_site; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last_site-1], Li=last_site, R=Rs[last_site+2], Ri=last_site+1)
+                        disc = updatecore!(A, B, C, last_site, Ls[last_site-1], Rs[last_site+2];
+                            method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
 
-                        reqs = MPI.Isend(collect(size(Psic[last_site])), comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(collect(size(Vc[last_site])), comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(collect(size(Psic[last_site+1])), comm; dest=mpirank+1, tag=3*juliarank+2)
+                        Ci = TCI.sitetensor(C, last_site)
+                        Yci = inversesingularvalue(C, last_site)
+                        Cip1 = TCI.sitetensor(C, last_site+1)
 
-                        MPI.Waitall([reqs, reqs1, reqs2])
-
-                        # println("Durante sx, $juliarank invia $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
-                        reqs = MPI.Isend(Psic[last_site], comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(Vc[last_site], comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(Psic[last_site+1], comm; dest=mpirank+1, tag=3*juliarank+2)
+                        reqs = MPI.Isend(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(collect(size(Yci)), comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs2 = MPI.Isend(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+2)
 
                         MPI.Waitall([reqs, reqs1, reqs2])
 
-                        Rs[last_site+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, last_site+1; R=Rs[last_site+2], Ri=last_site+1, random_env)
+                        reqs = MPI.Isend(Ci, comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(Yci, comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs2 = MPI.Isend(Cip1, comm; dest=mpirank+1, tag=3*juliarank+2)
 
-                        # println("Dopo comm sx, $juliarank ha $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
+                        MPI.Waitall([reqs, reqs1, reqs2])
+
+                        rightenvironment!(Rs, A, B, C, last_site+1; random_env, p)
                     end
                 else # Right
                     if juliarank != 1
-                        # println("Prima di comm dx, $juliarank ha $(size(Psic[first_site-1])), $(size(Vc[first_site-1])), $(size(Psic[first_site]))")
-
-                        Rs[first_site+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, first_site+1; R=Rs[first_site+2], Ri=first_site+1, random_env)
+                        rightenvironment!(Rs, A, B, C, first_site+1; random_env, p)
 
                         sizes = Vector{Int}(undef, 3)
                         reqs = MPI.Isend(collect(size(Rs[first_site+1])), comm; dest=mpirank-1, tag=juliarank)
@@ -1215,12 +1156,10 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Ls[first_site-2], comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
-                        # disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, first_site-1; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, L=Ls[first_site-2], Li=first_site-1, R=Rs[first_site+1], Ri=first_site) #center on first_site
 
                         sizes = Vector{Int}(undef, 4)
                         sizes1 = Vector{Int}(undef, 2)
                         sizes2 = Vector{Int}(undef, 4)
-
                         
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
                         reqr1 = MPI.Irecv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
@@ -1228,43 +1167,24 @@ function contract_distr_fit(
                         
                         MPI.Waitall([reqr, reqr1, reqr2])
                         
-                        # println("Durante dx, $juliarank pronto a ricevere $sizes, $sizes1, $sizes2")
+                        Ci = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
+                        Yci = ones(ValueType, sizes1[1], sizes1[2])
+                        Cip1 = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
 
-                        Psic[first_site-1] = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
-                        Vc[first_site-1] = ones(ValueType, sizes1[1], sizes1[2])
-                        Psic[first_site] = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
-
-                        reqr = MPI.Irecv!(Psic[first_site-1], comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(Vc[first_site-1], comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        reqr2 = MPI.Irecv!(Psic[first_site], comm; source=mpirank-1, tag=3*(juliarank-1)+2)
+                        reqr = MPI.Irecv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        reqr1 = MPI.Irecv!(Yci, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        reqr2 = MPI.Irecv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
 
                         MPI.Waitall([reqr, reqr1, reqr2])
 
-                        Ls[first_site-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, first_site-1; L=Ls[first_site-2], Li=first_site-1, random_env)
+                        settwositetensors!(C, first_site-1, Ci, Yci, Cip1)
 
-                        # println("Dopo comm dx, $juliarank ha $(size(Psic[first_site-1])), $(size(Vc[first_site-1])), $(size(Psic[first_site]))")
+                        leftenvironment!(Ls, A, B, C, first_site-1; random_env, p)
                     end
                 end
             end
 
-            time_communication = (time_ns() - time_communication)*1e-9
-            # println("Node $juliarank: sweep $sweep time_communication=$time_communication s")
-
-            # println("Juliarank $juliarank post comm Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-            # println("Juliarank $juliarank post comm Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
-
-            # max_disc = max(max_disc, disc) # Check last_site update on edge
             tot_disc += disc
-
-            # println("Juliarank $juliarank after comm maximum Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-            # println("Juliarank $juliarank after comm maximum Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
-            # println("juliarank $juliarank after communication sweep $sweep tot_disc = $tot_disc")
-
-
-            # println("Juliarank $juliarank after comm sweep $sweep Xmax: ", [maximum(X[i]) for i in 1:length(X)])
-
-            time_communication = (time_ns() - time_communication)*1e-9
-            # println("Rank $juliarank Sweep $sweep of length $(length(first_site:last_site-1)): tot_disc = $tot_disc, time_sweep = $time_sweep, time_communication = $time_communication")
 
             converged = tot_disc < tolerance
             global_converged = MPI.Allreduce(converged, MPI.LAND, comm)
@@ -1272,60 +1192,43 @@ function contract_distr_fit(
                 break
             end
         end
-
-        # println("Juliarank $juliarank pre X maximum Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-        # println("Juliarank $juliarank pre X maximum Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
-
-        # println("Per curiosità: $juliarank ha Vc: $([diag(Vc[i]) for i in 1:n-1])")
-
-        time_final = time_ns()
-        for i in partitions[juliarank]
-            if i != n
-                Psic[i] = _contract(Psic[i], Vc[i], (4,), (1,))
-            end
-        end
-
-        # println("Juliarank $juliarank X maximum X: $([maximum(abs.(X[i])) for i in 1:n])")
-
-        if juliarank == 1
-            for j in 2:nprocs
-                Psic[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
-            end
-        else
-            MPI.send(Psic[partitions[juliarank][1]:partitions[juliarank][end]], comm; dest=0, tag=1)
-        end
-
-        time_final = (time_ns() - time_final)*1e-9
-        # println("Node $juliarank: time_final=$time_final s")
-
-        # println("Time final = $time_final")
-        # println("Juliarank $juliarank synched X maximum X: $([maximum(abs.(X[i])) for i in 1:n])")
-
     end
     
-    nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
 
     # Redistribute the tensor train among the processes.
     if synchedoutput
         if juliarank == 1
+            received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
+            received_inversesingularvalues = Vector{Matrix}(undef, n-1)
             for j in 2:nprocs
-                MPI.send(Psic, comm; dest=j-1, tag=1)
+                received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
+                received_inversesingularvalues[partitions[j][1]:partitions[j][end]-1] = MPI.recv(comm; source=j-1, tag=2)
             end
         else
-            Psic = MPI.recv(comm; source=0, tag=1)
+            send_sitetensors = sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
+            send_inversesingularvalues = inversesingularvalues(C)[partitions[juliarank][1]:partitions[juliarank][end]-1]
+            MPI.send(send_sitetensors, comm; dest=0, tag=1)
+            MPI.send(send_inversesingularvalues, comm; dest=0, tag=2)
         end
+
+        nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
+        
+        if juliarank == 1
+            received_sitetensors[1:partitions[1][end]] = sitetensors(C)[1:partitions[1][end]]
+            received_inversesingularvalues[1:partitions[1][end]-1] = inversesingularvalues(C)[1:partitions[1][end]-1]
+            for j in 2:nprocs
+                MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
+                MPI.send(received_inversesingularvalues, comm; dest=j-1, tag=2)
+            end
+        else
+            received_sitetensors = MPI.recv(comm; source=0, tag=1)
+            received_inversesingularvalues = MPI.recv(comm; source=0, tag=2)
+        end
+
+        return TCI.InverseTensorTrain{ValueType,4}(received_sitetensors, received_inversesingularvalues, 1:n)
     end
 
-    if !synchedoutput && juliarank > 1
-        return TCI.TensorTrain{ValueType,4}(Psia) # Anything is fine
-    end
-
-    # println("partitions: $partitions")
-    # println("My Psic sizes are: $([size(Psic[i]) for i in 1:n])")
-
-    # println("Juliarank $juliarank return Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-
-    return TCI.TensorTrain{ValueType,4}(Psic)
+    return C
 end
 
 """
@@ -1345,10 +1248,10 @@ Conctractos tensor trains A and B using the fit algorithm.
 - `synchedoutput::Bool`: Whether the output MPOs must be synchronized. Use "true" if you want that all the nodes have the correct MPOs as output.
 """
 function contract_distr_fit(
-    mpoA::TCI.TensorTrain{ValueType,4},
-    mpoB::TCI.TensorTrain{ValueType,4};
+    A::SiteTensorTrain{ValueType,4},
+    B::SiteTensorTrain{ValueType,4};
+    C::SiteTensorTrain{ValueType,4}=deepcopy(A), #TODO try without deepcopy
     nsweeps::Int=8,
-    initial_guess::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     partitions::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
     tolerance::Float64=1e-12,
@@ -1357,8 +1260,7 @@ function contract_distr_fit(
     synchedinput::Bool=false,
     synchedoutput::Bool=true,
     random_update::Bool=false,
-    random_env::Bool=false,
-    stable::Bool=true,
+    random_env::Bool=false, p::Int=0,
     kwargs...
 )::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(mpoA) != length(mpoB)
@@ -1367,31 +1269,12 @@ function contract_distr_fit(
 
     # println("La tolerance usata e': $tolerance")
     if !synchedinput
-        synchronize_tt!(mpoA)
-        synchronize_tt!(mpoB)
-        if initial_guess != nothing
-            synchronize_tt!(initial_guess)
-        end
+        synchronize_tt!(A)
+        synchronize_tt!(B)
+        synchronize_tt!(C)
     end
 
-    n = length(mpoA)
-
-    A = Vector{Array{ValueType, 4}}(undef, n)
-    B = Vector{Array{ValueType, 4}}(undef, n)
-    X = Vector{Array{ValueType, 4}}(undef, n)
-    for i in 1:n
-        A[i] = deepcopy(mpoA.sitetensors[i])
-        B[i] = deepcopy(mpoB.sitetensors[i])
-        if !isnothing(initial_guess)
-            X[i] = deepcopy(initial_guess.sitetensors[i])
-        else
-            if size(mpoA[i])[2] == size(mpoB[i])[3]
-                X[i] = deepcopy(mpoB.sitetensors[i])
-            else
-                X[i] = ones(ValueType, size(mpoB[i])[1], size(mpoA[i])[2], size(mpoB[i])[3], size(mpoB[i])[4])
-            end
-        end
-    end
+    n = length(A)
 
     if MPI.Initialized()
         if subcomm != nothing
@@ -1405,7 +1288,7 @@ function contract_distr_fit(
         if partitions == nothing
             if n < 4
                 println("Warning! The TT is too small to be parallelized.")
-                return contract_fit(mpoA, mpoB; nsweeps, initial_guess, tolerance, method, maxbonddim, kwargs...)
+                return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
             end
             if n < 6
                 if nprocs > 2
@@ -1457,17 +1340,19 @@ function contract_distr_fit(
         end
     else
         println("Warning! Distributed strategy has been chosen, but MPI is not initialized, please use TCI.initializempi() before contract() and use TCI.finalizempi() afterwards")
-        return contract_fit(mpoA, mpoB; nsweeps, initial_guess, tolerance, method, maxbonddim, kwargs...)
+        return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
     end
 
     if nprocs == 1
         println("Warning! Distributed strategy has been chosen, but only one process is running")
-        return contract_fit(mpoA, mpoB; nsweeps, initial_guess, tolerance, method, maxbonddim, kwargs...)
+        return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
     end
 
     if juliarank <= nprocs
 
-        time_precompute = time_ns()
+        setpartition!(A, partitions[juliarank])
+        setpartition!(B, partitions[juliarank])
+        setpartition!(C, partitions[juliarank])
 
         Ls = Vector{Array{ValueType, 3}}(undef, n)
         Rs = Vector{Array{ValueType, 3}}(undef, n)
@@ -1477,142 +1362,62 @@ function contract_distr_fit(
 
         #Ls are left enviroments and Rs are right environments
         if first_site != 1
-            init_env = rand(ValueType, size(A[first_site])[1], size(B[first_site])[1], size(X[first_site])[1])
-            Ls[first_site-1] = init_env ./ sqrt(sum(init_env.^2))
+            Ls[first_site-1] = rand(ValueType,
+                first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))))
+            Ls[first_site-1] = Ls[first_site-1] ./ sqrt(sum(Ls[first_site-1].^2))
         end
         if last_site != n
-            init_env = rand(ValueType, size(A[last_site])[end], size(B[last_site])[end], size(X[last_site])[end])
-            Rs[last_site+1] = init_env ./ sqrt(sum(init_env.^2))
+            Rs[last_site+1] = rand(ValueType,
+                last(size(sitetensor(A, last_site))), last(size(sitetensor(B, last_site))), last(size(sitetensor(C, last_site))))
+            Rs[last_site+1] = Rs[last_site+1] ./ sqrt(sum(Rs[last_site+1].^2))
         end
-
-        # println("Juliarank $juliarank my A at the start is $([A[i][1,1,1,1] for i in 1:n]), $([A[i][end,end,end,end] for i in 1:n])")
-        # println("Juliarank $juliarank my B at the start is $([B[i][1,1,1,1] for i in 1:n]), $([B[i][end,end,end,end] for i in 1:n])")
 
         if juliarank % 2 == 1 # Precompute right environment if going forward
-            if !random_env && stable
-                centercanonicalize!(A, first_site)
-                # centercanonicalize!(A, 1)
-                centercanonicalize!(B, first_site)
-                # centercanonicalize!(B, 1)
-            end
-            centercanonicalize!(X, first_site)
-            for i in last_site:-1:first_site+2#n:-1:3#last_site:-1:first_site+2
-                if i == n
-                    Rs[i] = rightenvironment(A, B, X, i; random_env)
-                else
-                    Rs[i] = rightenvironment(A, B, X, i; R=Rs[i+1], Ri=i, random_env)
-                end
+            setcenter!(A, first_site)
+            setcenter!(B, first_site)
+            setcenter!(X, first_site)
+            for i in last_site:-1:first_site+2
+                rightenvironment!(Rs, A, B, C, i; random_env, p)
             end
         else # Precompute left environment if going backward
-            if !random_env && stable
-                centercanonicalize!(A, last_site-1)
-                # centercanonicalize!(A, n)
-                centercanonicalize!(B, last_site-1)
-                # centercanonicalize!(B, n)
-            end
-            centercanonicalize!(X, last_site)
-            for i in first_site:last_site-2#1:n-2#first_site:last_site-2
-                if i == 1
-                    Ls[i] = leftenvironment(A, B, X, i; random_env)
-                else
-                    Ls[i] = leftenvironment(A, B, X, i; L=Ls[i-1], Li=i, random_env)
-                end
+            setcenter!(A, last_site-1)
+            setcenter!(B, last_site-1)
+            setcenter!(X, last_site)
+            for i in first_site:last_site-2
+                leftenvironment!(Ls, A, B, C, i-1; random_env, p)
             end
         end
 
-        # println("Juliarank $juliarank my A after envs is $([A[i][1,1,1,1] for i in 1:n]), $([A[i][end,end,end,end] for i in 1:n])")
-        # println("Juliarank $juliarank my B after envs is $([B[i][1,1,1,1] for i in 1:n]), $([B[i][end,end,end,end] for i in 1:n])")
-
-
-        time_precompute = (time_ns() - time_precompute)*1e-9
-        # println("Node $juliarank: Precomputation time: $time_precompute s")
-
-        # TODO AT THE END IS NOT CENTERCANONICAL!
         for sweep in 1:nsweeps
             tot_disc = 0.0
             time_update = time_ns()
 
-            # println("Juliarank $juliarank pre sweep $sweep Xmax: ", [maximum(X[i]) for i in 1:length(X)])
-            # println("Juliarank $juliarank starting sweep $sweep, X=$(checkorthogonality(X))")
-
             if sweep % 2 == juliarank % 2
                 for i in first_site:last_site-1
-                    if !random_env && stable
-                        centercanonicalize!(A, i)
-                        centercanonicalize!(B, i)
-                    end
-                    # println("Max sweep $sweep: ", [maximum(A[i]) for i in 1:length(A)])
-                    # println("Max sweep $sweep: ", [maximum(B[i]) for i in 1:length(B)])
 
-                    # println("Juliarank $juliarank updating site $i forward with X=$(checkorthogonality(X))")
+                    i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                    if i == 1
-                        disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == 2
-                        disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == first_site
-                        disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
-                    elseif i < n-1
-                        disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
-                    else
-                        disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1)
-                    end
-                    # println("Juliarank $juliarank sweep $sweep site $i: disc = $disc")
-                    # max_disc = max(max_disc, disc)
+                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+
                     tot_disc += disc
-                    # println("Juliarank $juliarank after updating $i, X=$(checkorthogonality(X))")
-
                 end
             else
                 for i in last_site-1:-1:first_site
-                    if !random_env && stable
-                        centercanonicalize!(A, i)
-                        centercanonicalize!(B, i)
-                    end
+                    i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                    # println("Juliarank $juliarank updating site $i backward with X=$(checkorthogonality(X))")
+                    disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
-                    if i == n-1
-                        disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == n-2
-                        disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == last_site-1
-                        disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
-                    elseif i > 1
-                        disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
-                    else
-                        disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, R=Rs[i+3], Ri=i+2)
-                    end
-                    # println("Juliarank $juliarank sweep $sweep site $i: disc = $disc")
-                    # println("Juliarank $juliarank after updating $i, X=$(checkorthogonality(X))")
-
-                    # max_disc = max(max_disc, disc)
                     tot_disc += disc
                 end
             end
 
-            # println("Juliarank $juliarank my A after sweep is $([A[i][1,1,1,1] for i in 1:n]), $([A[i][end,end,end,end] for i in 1:n])")
-            # println("Juliarank $juliarank my B after sweep is $([B[i][1,1,1,1] for i in 1:n]), $([B[i][end,end,end,end] for i in 1:n])")
-
-            # println("Juliarank $juliarank after sweep $sweep, A=$(checkorthogonality(A)), B=$(checkorthogonality(B))")
-
-
-            time_update = (time_ns() - time_update)*1e-9
-
-            # println("Juliarank $juliarank after sweep $sweep Xmax: ", [maximum(X[i]) for i in 1:length(X)])
-
-
-            # println("Juliarank $juliarank sweep $sweep: max_disc = $max_disc")
             time_communication = time_ns()
             if MPI.Initialized()
                 if juliarank % 2 == sweep % 2 # Left
                     if juliarank != nprocs
-                        if !random_env && stable
-                            centercanonicalize!(A, last_site)
-                            centercanonicalize!(B, last_site)
-                        end
-
-                        Ls[last_site-1] = leftenvironment(A, B, X, last_site-1; L=Ls[last_site-2], Li=last_site-1, random_env)
+                        leftenvironment!(Ls, A, B, C, last_site-1; random_env, p)
 
                         sizes = Vector{Int}(undef, 3)
                         reqs = MPI.Isend(collect(size(Ls[last_site-1])), comm; dest=mpirank+1, tag=juliarank)
@@ -1626,19 +1431,26 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(A, B, X, last_site; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last_site-1], Li=last_site, R=Rs[last_site+2], Ri=last_site+1)
-                        
-                        Rs[last_site+1] = rightenvironment(A, B, X, last_site+1; R=Rs[last_site+2], Ri=last_site+1, random_env)
+                        disc = updatecore!(A, B, C, last_site, Ls[last_site-1], Rs[last_site+2];
+                            method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
+
+                        Ci = TCI.sitetensor(C, last_site)
+                        Cip1 = TCI.sitetensor(C, last_site+1)
+
+                        reqs = MPI.Isend(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+1)
+
+                        MPI.Waitall([reqs, reqs1])
+
+                        reqs = MPI.Isend(Ci, comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(Cip1, comm; dest=mpirank+1, tag=3*juliarank+1)
+
+                        MPI.Waitall([reqs, reqs1])
+                        rightenvironment!(Rs, A, B, C, last_site+1; random_env, p)
                     end
                 else # Right
                     if juliarank != 1
-                        if !random_env && stable
-                            centercanonicalize!(A, first_site)
-                            centercanonicalize!(B, first_site)
-                        end
-
-                        Rs[first_site+1] = rightenvironment(A, B, X, first_site+1; R=Rs[first_site+2], Ri=first_site+1, random_env)
-
+                        rightenvironment!(Rs, A, B, C, first_site+1; random_env, p)
                         sizes = Vector{Int}(undef, 3)
                         reqs = MPI.Isend(collect(size(Rs[first_site+1])), comm; dest=mpirank-1, tag=juliarank)
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=juliarank-1)
@@ -1650,18 +1462,32 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Ls[first_site-2], comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(A, B, X, first_site-1; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[first_site-2], Li=first_site-1, R=Rs[first_site+1], Ri=first_site) #center on first_site
 
-                        Ls[first_site-1] = leftenvironment(A, B, X, first_site-1; L=Ls[first_site-2], Li=first_site-1, random_env)
+                        
+                        sizes = Vector{Int}(undef, 4)
+                        sizes1 = Vector{Int}(undef, 2)
+                        sizes2 = Vector{Int}(undef, 4)
+                        
+                        reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        reqr1 = MPI.Irecv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        
+                        MPI.Waitall([reqr, reqr1])
+                        
+                        Ci = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
+                        Cip1 = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
+
+                        reqr = MPI.Irecv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        reqr1 = MPI.Irecv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        
+                        MPI.Waitall([reqr, reqr1])
+
+                        settwositetensors!(C, first_site-1, Ci, Cip1)
+
+                        Ls[first_site-1] = leftenvironment(Ls, A, B, C, first_site-1; random_env, p)
                     end
                 end
             end
-            # max_disc = max(max_disc, disc) # Check last_site update on edge
             tot_disc += disc
-
-
-            time_communication = (time_ns() - time_communication)*1e-9
-            # println("Rank $juliarank Sweep $sweep: max_disc = $max_disc, time_update = $time_update s, time_communication = $time_communication s")
 
             converged = tot_disc < tolerance
             global_converged = MPI.Allreduce(converged, MPI.LAND, comm)
@@ -1670,143 +1496,86 @@ function contract_distr_fit(
             end
         end
 
+        # Synchronize results across processes using tree-based communication
         rounds = ceil(Int, log2(nprocs))
 
-        my_first = partner_first = my_last = partner_last = my_old_first = partner_old_first = my_old_last = partner_old_last = 0
-
-        # println("Juliarank $juliarank before starting with X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
-
-
-        # println("Juliarank $juliarank starting merging phase with $rounds rounds. X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
+        # TODO need to test this.
         for s in 1:rounds
-            my_old_first, partner_old_first, my_old_last, partner_old_last = my_first, partner_first, my_last, partner_last
             delta = 2^(s-1)
             
             if ((juliarank - 1) % (2*delta)) == 0 # I'm a receiver
-                juliapartner = juliarank + delta
-                # println("Out of $nprocs, I am juliarank $juliarank at round $s receiving from $juliapartner")
+            juliapartner = juliarank + delta
+            
+            if juliapartner <= nprocs
                 my_first = partitions[juliarank][1]
+                my_last = partitions[juliarank][end]
                 partner_first = partitions[juliapartner][1]
-                my_last  = partner_first - 1
-                partner_last  = partitions[juliapartner+delta-1][end]
-                # println("Out of $nprocs, I am juliarank $juliarank at round $s with $my_first:$my_last receiving from $juliapartner with $partner_first:$partner_last")
-
-                juliapartner = juliarank + delta
-                if !random_env && stable
-                    centercanonicalize!(A, my_last)
-                    centercanonicalize!(B, my_last)
+                partner_last = partitions[min(juliapartner + delta - 1, nprocs)][end]
+                
+                # Receive partner's portion of C
+                sizes = Vector{Int}(undef, partner_last - partner_first + 1)
+                for i in partner_first:partner_last
+                    sizes_i = MPI.recv(comm; source=juliapartner-1, tag=100*s + i)
+                    
+                    C_i = ones(ValueType, sizes_i[1], sizes_i[2], sizes_i[3], sizes_i[4])
+                    MPI.recv!(C_i, comm; source=juliapartner-1, tag=200*s + i)
+                    
+                    TCI.setsitetensor!(C, i, C_i)
                 end
-
-                # println("Juliarank $juliarank at round $s trying to center on site $my_last with X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
-                centercanonicalize!(X, my_last)
-
-                X[partner_first:partner_last] = MPI.recv(comm; source = juliapartner-1, tag = 2*juliapartner)
-                MPI.send(A[partner_first:partner_last], comm; dest = juliapartner-1, tag = 2*juliarank)
-                MPI.send(B[partner_first:partner_last], comm; dest = juliapartner-1, tag = 2*juliarank + 1)
-
-                # R = MPI.recv(comm; source = juliapartner-1, tag = 2*juliapartner+1)
-                Ri = partner_first
-
-                # TODO riprendi da qui, ragionando su chi sono L e Li
-                if s == 1
-                    # TODO I should distinguish l2r and r2l
-                    if juliarank != 1
-                        L = leftenvironment(A, B, X, my_last-1; random_env, L=Ls[my_first-1], Li=my_first) # TODO sicuro?
-                        # L = leftenvironment(A, B, X, my_last-1; random_env)
-                    else
-                        L = leftenvironment(A, B, X, my_last-1; random_env)
-                    end
-                else
-                    L = leftenvironment(A, B, X, my_last-1; L=Ls[my_old_last-1], Li=my_old_last, random_env)
-                    # L = leftenvironment(A, B, X, my_last-1; L=Ls[my_old_last-1], Li=my_old_last, random_env)
-                    # L = leftenvironment(A, B, X, my_last-1; random_env)
-                end
-                Li = my_last
-
-                # L_test = leftenvironment(A, B, X, my_last-1; random_env)
-                R = MPI.recv(comm; source = juliapartner-1, tag = 2*juliapartner+1)
-
-                # if s == 1
-                    # if juliarank != nprocs
-                        # R_test = rightenvironment(A, B, X, my_last+2; R, Ri=partner_last, random_env)
-                    # else
-                        # R_test = rightenvironment(A, B, X, my_last+2; random_env)
-                    # end
-                # else
-                    # R_test = rightenvironment(A, B, X, my_last+2; random_env)
-                    # R_test = rightenvironment(A, B, X, my_last+2; R, Ri=partner_last, random_env)
-                # end
-
-                Ri = my_last + 1
-                # R = rightenvironment(A, B, X, my_last+2; random_env)
-                # Rs[my_last+2] = R
-                # Ls[my_last-1] = L
-
-                _, Ls[my_last-1], Rs[my_last+2] = updatecore!(
-                   A, B, X, my_last;
-                   method, tolerance=tolerance/((n-1)), maxbonddim,
-                   direction = :forward,
-                   random_update, random_env,
-                   R, Ri, L, Li
-                )
-                # Provo con L e R_test:
-                # R è sicuramente sbagliato.
-            elseif (s == 1) || (((juliarank - 1) % (2*delta)) == delta) # I'm a sender
-                # println("Juliarank $juliarank is a sender at round $s and my partitions last_site should be partitions[$(juliarank+delta-1)] since delta=$delta, but max is $(length(partitions))")
-                juliapartner = juliarank - delta
-                my_first = partitions[juliarank][1]
-                partner_first = partitions[juliapartner][1]
-                partner_last  = my_first - 1
-                my_last = partitions[juliarank+delta-1][end]
-
-                # println("Juliarank $juliarank is a sender at round $s with $my_first:$my_last sending to $juliapartner with $partner_first:$partner_last")
-                # println("Juliarank $juliarank at round $s trying to center on site $my_first with X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
-                if !random_env && stable
-                    centercanonicalize!(A, my_first)
-                    centercanonicalize!(B, my_first)
-                end
-                # println("Juliarank $juliarank at round $s trying to center on site $my_first with X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
-                centercanonicalize!(X, my_first)
-
-                # println("Juliarank $juliarank RIGHT at round $s before communication: my_first=$my_first, my_last=$my_last, partner_first=$partner_first, partner_last=$partner_last")
-
-                 # send X[my_first:my_last] to receiver
-                MPI.send(X[my_first:my_last], comm; dest = juliapartner - 1, tag = 2*juliarank)
-                A[my_first:my_last] = MPI.recv(comm; source = juliapartner-1, tag = 2*juliapartner)
-                B[my_first:my_last] = MPI.recv(comm; source = juliapartner-1, tag = 2*juliapartner+1)
-
-
-                # TODO this is a bored implementation, I could improve it.
-                if s == 1
-                    if my_last != n
-                        R = rightenvironment(A, B, X, my_first+1; R=Rs[my_last+1], Ri=my_last, random_env)
-                    else
-                        R = rightenvironment(A, B, X, my_first+1; random_env)
-                    end
-                else
-                    R = rightenvironment(A, B, X, my_first+1; R=Rs[partner_old_first+1], Ri=partner_old_first, random_env)
-                end
-
-                MPI.send(R, comm; dest = juliapartner - 1, tag = 2*juliarank+1)
+                
+                # Update partitions to include partner's range
+                setpartition!(C, my_first:partner_last)
             end
-
+            
+            elseif ((juliarank - 1) % (2*delta)) == delta # I'm a sender
+            juliapartner = juliarank - delta
+            
+            if juliapartner >= 1
+                my_first = partitions[juliarank][1]
+                my_last = partitions[min(juliarank + delta - 1, nprocs)][end]
+                
+                # Send my portion of C to partner
+                for i in my_first:my_last
+                C_i = TCI.sitetensor(C, i)
+                MPI.send(collect(size(C_i)), comm; dest=juliapartner-1, tag=100*s + i)
+                MPI.send(C_i, comm; dest=juliapartner-1, tag=200*s + i)
+                end
+            end
+            end
+            
+            MPI.Barrier(comm)
         end
 
     end
     nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
 
     # Redistribute the tensor train among the processes.
-    if synchedoutput || true
+    if synchedoutput
         if juliarank == 1
+            received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
             for j in 2:nprocs
-                MPI.send(X, comm; dest=j-1, tag=1)
+                received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
             end
         else
-            X = MPI.recv(comm; source=0, tag=1)
+            send_sitetensors = sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
+            MPI.send(send_sitetensors, comm; dest=0, tag=1)
         end
+
+        nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
+        
+        if juliarank == 1
+            received_sitetensors[1:partitions[1][end]] = sitetensors(C)[1:partitions[1][end]]
+            for j in 2:nprocs
+                MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
+            end
+        else
+            received_sitetensors = MPI.recv(comm; source=0, tag=1)
+        end
+
+        return TCI.SiteTensorTrain{ValueType,4}(received_sitetensors, 1:n)
     end
 
-    return TCI.TensorTrain{ValueType,4}(X)
+    return C
 end
 
 """
@@ -1843,66 +1612,9 @@ Arguments:
 - `kwargs...` are forwarded to [`crossinterpolate2`](@ref) if `algorithm=:TCI` or to [`contract_fit`](@ref) if `algorithm=:fit` or `algorithm=:distrfit`.
 """
 function contract(
-    Psia::TCI.AbstractTensorTrain{ValueType1},
-    Va::TCI.AbstractTensorTrain{ValueType1},
-    Psib::TCI.AbstractTensorTrain{ValueType2},
-    Vb::TCI.AbstractTensorTrain{ValueType2};
-    algorithm::Symbol=:TCI,
-    tolerance::Float64=1e-12,
-    maxbonddim::Int=typemax(Int),
-    method::Symbol=:RSVD,
-    f::Union{Nothing,Function}=nothing,
-    subcomm::Union{Nothing, MPI.Comm}=nothing,
-    kwargs...
-)::TCI.TensorTrain{promote_type(ValueType1,ValueType2), 4} where {ValueType1,ValueType2}
-    Vres = promote_type(ValueType1, ValueType2)
-    if algorithm != :fit && algorithm != :distrfit
-        println("Warning! Inverse canonical form detected, but algorithm $algorithm does not support it. Converting to site canonical form.")
-        for i in 1:length(Psia)-1
-            Psia[i] = _contract(Psia[i], Va[i], (4,), (1,))
-            Psib[i] = _contract(Psib[i], Vb[i], (4,), (1,))
-        end
-    end
-    if algorithm === :TCI
-        Psia = TCI.TensorTrain{Vres,4}(Psia) # For testing reason, JET prefers it right before call.
-        Psib = TCI.TensorTrain{Vres,4}(Psib)
-        mpo = contract_TCI(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, f=f, kwargs...)
-    elseif algorithm === :naive
-        error("Naive contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TCI.TensorTrain{Vres,4}(Psia)
-        Psib = TCI.TensorTrain{Vres,4}(Psib)
-        mpo = contract_naive(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim)
-    elseif algorithm === :zipup
-        error("Zipup contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TCI.TensorTrain{Vres,4}(Psia)
-        Psib = TCI.TensorTrain{Vres,4}(Psib)
-        mpo = contract_zipup(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    elseif algorithm === :distrzipup
-        error("Zipup contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TCI.TensorTrain{Vres,4}(Psia)
-        Psib = TCI.TensorTrain{Vres,4}(Psib)
-        mpo = contract_distr_zipup(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
-    elseif algorithm === :fit
-        if f !== nothing
-            error("Fit contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-        end
-        mpo = contract_fit(Psia, Va, Psib, Vb; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    elseif algorithm === :distrfit
-        if f !== nothing
-            error("Fit contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-        end
-        mpo = contract_distr_fit(Psia, Va, Psib, Vb; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    else
-        throw(ArgumentError("Unknown algorithm $algorithm."))
-    end
-    return mpo
-end
-
-
-function contract(
     A::TCI.TensorTrain{ValueType1,4},
     B::TCI.TensorTrain{ValueType2,4};
-    algorithm::Symbol=:TCI,
+    algorithm::Symbol=:naive,
     tolerance::Float64=1e-12,
     maxbonddim::Int=typemax(Int),
     method::Symbol=:SVD,
@@ -1923,23 +1635,74 @@ function contract(
             error("Zipup contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
         end
         mpo = contract_zipup(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    elseif algorithm === :fit
-        if f !== nothing
-            error("Fit contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-        end
-        mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    elseif algorithm === :distrfit
-        if f !== nothing
-            error("Fit contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-        end
-        mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
+    elseif algorithm === :fit || algorithm === :distrfit
+        error("algorithm=:$algorithm requires SiteTensorTrain or InverseTensorTrain types. Convert your TensorTrain first or use algorithm=:TCI, :naive, or :zipup.")
     else
         throw(ArgumentError("Unknown algorithm $algorithm."))
     end
     return mpo
 end
 
-# TODO implement this for other types
+# Contract for SiteTensorTrain: supports :fit and :distrfit
+function contract(
+    A::SiteTensorTrain{ValueType1,4},
+    B::SiteTensorTrain{ValueType2,4};
+    algorithm::Symbol=:fit,
+    tolerance::Float64=1e-12,
+    maxbonddim::Int=typemax(Int),
+    method::Symbol=:SVD,
+    f::Union{Nothing,Function}=nothing,
+    subcomm::Union{Nothing, MPI.Comm}=nothing,
+    kwargs...
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
+    if f !== nothing
+        error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
+    end
+    
+    if algorithm === :fit
+        mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
+    elseif algorithm === :distrfit
+        mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
+    elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
+        # Convert to TensorTrain for these algorithms
+        mpo = contract(TCI.TensorTrain(TCI.sitetensors(A)), TCI.TensorTrain(TCI.sitetensors(B)); 
+                      algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
+    else
+        throw(ArgumentError("Unknown algorithm $algorithm."))
+    end
+    return mpo
+end
+
+# Contract for InverseTensorTrain: supports :fit and :distrfit
+function contract(
+    A::InverseTensorTrain{ValueType1,4},
+    B::InverseTensorTrain{ValueType2,4};
+    algorithm::Symbol=:fit,
+    tolerance::Float64=1e-12,
+    maxbonddim::Int=typemax(Int),
+    method::Symbol=:SVD,
+    f::Union{Nothing,Function}=nothing,
+    subcomm::Union{Nothing, MPI.Comm}=nothing,
+    kwargs...
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
+    if f !== nothing
+        error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
+    end
+    
+    if algorithm === :fit
+        mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
+    elseif algorithm === :distrfit
+        mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
+    elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
+        # Convert to TensorTrain for these algorithms
+        mpo = contract(TCI.TensorTrain(A), TCI.TensorTrain(B); # TODO, these needs to be created 
+                      algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
+    else
+        throw(ArgumentError("Unknown algorithm $algorithm."))
+    end
+    return mpo
+end
+
 function contract(
     A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3}},
     B::TCI.TensorTrain{ValueType2,4};
@@ -1958,11 +1721,66 @@ function contract(
     return TCI.TensorTrain{3}(tt, prod.(sitedims(tt)))
 end
 
+# TODO SiteTensorTrain and TensorTrain, who wins? Right now not possible to mix
 function contract(
-    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3}},
-    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
+    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},SiteTensorTrain{ValueType1,3}},
+    B::SiteTensorTrain{ValueType2,4};
+    kwargs...
+)::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), B; kwargs...)
+    return SiteTensorTrain{3}(tt, prod.(sitedims(tt)))
+end
+
+function contract(
+    A::SiteTensorTrain{ValueType1,4},
+    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},SiteTensorTrain{ValueType2,3}};
+    kwargs...
+)::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
+    return SiteTensorTrain{3}(tt, prod.(sitedims(tt)))
+end
+
+# It's a scalar
+function contract(
+    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3},SiteTensorTrain{ValueType1,3}},
+    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3},SiteTensorTrain{ValueType2,3}};
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
     tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), TCI.TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
     return prod(prod.(tt.sitetensors))
+end
+
+# InverseTensorTrain with 3D tensors (upgrade to 4D)
+function contract(
+    A::InverseTensorTrain{ValueType1,3},
+    B::InverseTensorTrain{ValueType2,3};
+    kwargs...
+)::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
+    # Upgrade to 4D
+    A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
+    B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
+    tt = TCI.TensorTrain{4}(contract(A4, B4; kwargs...)) # TODO actually create (JET will throw an error)
+    return prod(prod.(tt.sitetensors))
+end
+
+function contract(
+    A::InverseTensorTrain{ValueType1,4},
+    B::InverseTensorTrain{ValueType2,3};
+    kwargs...
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    # Upgrade B to 4D
+    B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
+    tt = contract(A, B4; kwargs...)
+    return InverseTensorTrain{3}(tt, prod.(sitedims(tt)))
+end
+
+function contract(
+    A::InverseTensorTrain{ValueType1,3},
+    B::InverseTensorTrain{ValueType2,4};
+    kwargs...
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    # Upgrade A to 4D
+    A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
+    tt = contract(A4, B; kwargs...)
+    return InverseTensorTrain{3}(tt, prod.(sitedims(tt)))
 end
