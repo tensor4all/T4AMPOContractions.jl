@@ -141,229 +141,6 @@ function random_project_left(A::Array{ValueType,4}, max_l::Int; p::Int=2) where 
     return A_proj
 end
 
-# Compute full left environment
-function leftenvironment(
-    A::TCI.AbstractTensorTrain{ValueType},
-    B::TCI.AbstractTensorTrain{ValueType},
-    X::TCI.AbstractTensorTrain{ValueType},
-    i::Int;
-    # L::Array{ValueType, 3} = ones(ValueType, 1, 1, 1),
-    L::Union{Nothing, Array{ValueType, 3}} = nothing,
-    Li::Int = 1,
-    random_env::Bool = false
-)::Array{ValueType, 3} where {ValueType}
-    L === nothing && (L = ones(ValueType, 1, 1, 1))
-    # println("Left environment ABC $i, init: $(size(L))")
-    for ell in Li:i
-        A_ = B_ = nothing
-        if random_env
-            A_proj_left = random_project_left(A[ell], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-            B_proj_left = random_project_left(B[ell], Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p=0)
-            
-            L = _contract(L, A_proj_left', (1,), (1,))
-            L = _contract(L, B_proj_left', (1,), (1,))
-            L = permutedims(L, (2,3,1,))
-
-            A_ = _contract(A_proj_left, A[ell], (2,), (1,))
-            B_ = _contract(B_proj_left, B[ell], (2,), (1,))
-
-            # A_reconstructed = _contract(A_, A_proj_right', (4,), (1,))
-            # B_reconstructed = _contract(B_, B_proj_right', (4,), (1,))
-
-            # println("checkorthogonality: $(checkorthogonality(A)), $(checkorthogonality(B)), $(checkorthogonality(X))")
-            # println("errors reconstructions at $i in A,B,C: $(maximum(abs.(A_reconstructed - A[ell]))), $(maximum(abs.(B_reconstructed - B[ell])))")
-        else
-            A_ = A[ell]
-            B_ = B[ell]
-        end
-
-        # time_l = time_ns()
-        L = _contract(L, A_, (1,), (1,))
-        L = _contract(L, B_, (1,4,), (1,2,))
-        L = _contract(L, conj(X[ell]), (1,2,4,), (1,2,3,))
-        # time_l = (time_ns() - time_l)*1e-9
-        # println("ABX random=$random_env in $time_l at L[$ell]: A=$(size(A_)), B=$(size(B_)), X=$(size(X[ell]))")
-    end
-    if i!=0
-        # println("Left environment ABC $i, fine: $(size(L))=?=$(size(A[i])[4]), $(size(B[i])[4]), $(size(X[i])[4])")
-    else
-        # println("Left environment ABC $i fine: $(size(L))=?=(1,1,1)")
-    end
-    return L
-end
-
-# Compute left environment
-function leftenvironment(
-    Psia::TCI.AbstractTensorTrain{ValueType},
-    Va::TCI.AbstractTensorTrain{ValueType},
-    Psib::TCI.AbstractTensorTrain{ValueType},
-    Vb::TCI.AbstractTensorTrain{ValueType},
-    Psic::TCI.AbstractTensorTrain{ValueType},
-    Vc::TCI.AbstractTensorTrain{ValueType},
-    i::Int;
-    L::Union{Nothing, Array{ValueType, 3}} = nothing,
-    Li::Int = 1,
-    random_env::Bool = false
-    )::Array{ValueType, 3} where {ValueType}
-    L === nothing && (L = ones(ValueType, 1, 1, 1))
-    # println("Left environment PSI $i, init: $(size(L))")
-    for ell in Li:i
-        Psia_ = Psib_ = Va_ = Vb_ = nothing
-        if random_env
-            A_proj_left = random_project_left(Psia[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
-            B_proj_left = random_project_left(Psib[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
-            
-            L = _contract(L, A_proj_left', (1,), (1,))
-            L = _contract(L, B_proj_left', (1,), (1,))
-            L = permutedims(L, (2,3,1,))
-
-            Psia_ = _contract(A_proj_left, Psia[ell], (2,), (1,))
-            Psib_ = _contract(B_proj_left, Psib[ell], (2,), (1,))
-
-            Psia_ = _contract(Psia_, Va[ell], (4,), (1,))
-            Psib_ = _contract(Psib_, Vb[ell], (4,), (1,))
-
-            # A_reconstructed = _contract(Psia_, A_proj_right', (4,), (1,))
-            # B_reconstructed = _contract(Psib_, B_proj_right', (4,), (1,))
-
-            # println("checkorthogonality: $(checkorthogonality(A)), $(checkorthogonality(B)), $(checkorthogonality(X))")
-            # println("errors reconstructions at $i in Psi: $(maximum(abs.(A_reconstructed - Psia[ell]))), $(maximum(abs.(B_reconstructed - Psib[ell])))")
-        else
-            Psia_ = _contract(Psia[ell], Va[ell], (4,), (1,))
-            Psib_ = _contract(Psib[ell], Vb[ell], (4,), (1,))
-
-        end
-        Psic_ = _contract(Psic[ell], Vc[ell], (4,), (1,))
-        
-        # time_l = time_ns()
-        L = _contract(L, Psia_, (1,), (1,))
-        L = _contract(L, Psib_, (1,4,), (1,2,))
-        L = _contract(L, conj(Psic_), (1,2,4,), (1,2,3,))
-        # time_l = (time_ns() - time_l)*1e-9
-        # println("INV random=$random_env in $time_l at L[$ell]: Psia=$(size(Psia_)), Psib=$(size(Psib_)), Psic=$(size(Psic_))")
-    end
-    if i!=0
-        # println("Left environment PSI $i, fine: $(size(L))=?=$(size(Psia[i])[4]), $(size(Psib[i])[4]), $(size(Psic[i])[4])")
-    else
-        # println("Left environment PSI $i fine: $(size(L))=?=(1,1,1)")
-    end
-    return L
-end
-
-# Compute full right environment
-function rightenvironment(
-    A::TCI.AbstractTensorTrain{ValueType},
-    B::TCI.AbstractTensorTrain{ValueType},
-    X::TCI.AbstractTensorTrain{ValueType},
-    i::Int;
-    R::Union{Nothing, Array{ValueType, 3}} = nothing,
-    Ri::Int = length(A),
-    random_env::Bool = false
-    )::Array{ValueType, 3} where {ValueType}
-    R === nothing && (R = ones(ValueType, 1, 1, 1))
-    # println("Right environment ABC $i, init: $(size(R))")
-    for ell in Ri:-1:i
-        A_ = B_ = nothing
-        if random_env
-            A_proj_right = random_project_right(A[ell], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-            B_proj_right = random_project_right(B[ell], Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p=0)
-
-            A_ = _contract(A[ell], A_proj_right, (4,), (1,))
-            B_ = _contract(B[ell], B_proj_right, (4,), (1,))
-
-            # A_reconstructed = _contract(A_proj_left', A_, (2,), (1,))
-            # B_reconstructed = _contract(B_proj_left', B_, (2,), (1,))
-
-            # println("checkorthogonality: $(checkorthogonality(A)), $(checkorthogonality(B)), $(checkorthogonality(X))")
-            # println("errors reconstructions at $i in A,B,C: $(maximum(abs.(A_reconstructed - A[ell]))), $(maximum(abs.(B_reconstructed - B[ell])))")
-
-            R = _contract(B_proj_right', R, (2,), (2,))
-            R = _contract(A_proj_right', R, (2,), (2,))
-        else
-            A_ = A[ell]
-            B_ = B[ell]
-        end
-
-        # println("ABC with random=$random_env, dims at R[$ell]: A=$(size(A_)), B=$(size(B_)), X=$(size(X[ell]))")
-
-        # time_r = time_ns()
-        # println("Contracting A=$(size(A_)), B=$(size(B_)), X=$(size(X[ell])) with R=$(size(R))")
-        # println("Contracting C[$ell]=$(size(X[ell])) with R=$(size(R))")
-        R = _contract(conj(X[ell]), R, (4,), (3,))
-        R = _contract(B_, R, (3,4,), (3,5,)) # TODO controlla anche PSI
-        R =  _contract(A_, R, (2,3,4), (4,2,5,))
-        # time_r = (time_ns() - time_r)*1e-9
-        # println("ABX random=$random_env in $time_r at R[$ell]: A=$(size(A_)), B=$(size(B_)), X=$(size(X[ell]))")
-
-    end
-    if i!=length(A)+1
-        # println("Right environment ABC $i, fine: $(size(R))=?=$(size(A[i])[1]), $(size(B[i])[1]), $(size(X[i])[1])")
-    else
-        # println("Right environment ABC $i fine: $(size(R))=?=(1,1,1)")
-    end
-    return R
-end
-
-# Compute right environment
-function rightenvironment(
-    Psia::TCI.AbstractTensorTrain{ValueType},
-    Va::TCI.AbstractTensorTrain{ValueType},
-    Psib::TCI.AbstractTensorTrain{ValueType},
-    Vb::TCI.AbstractTensorTrain{ValueType},
-    Psic::TCI.AbstractTensorTrain{ValueType},
-    Vc::TCI.AbstractTensorTrain{ValueType},
-    i::Int;
-    R::Union{Nothing, Array{ValueType, 3}} = nothing,
-    Ri::Int = length(Psia),
-    random_env::Bool = false
-    )::Array{ValueType, 3} where {ValueType}
-    R === nothing && (R = ones(ValueType, 1, 1, 1))
-    # println("R init max: $(maximum(abs.(R)))")
-    for ell in Ri:-1:i
-        Psia_ = Psib_ = Va_ = Vb_ = nothing
-        if random_env
-            A_proj_right = random_project_right(Psia[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
-            B_proj_right = random_project_right(Psib[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
-
-            Psia_ = _contract(Psia[ell], A_proj_right, (4,), (1,))
-            Psib_ = _contract(Psib[ell], A_proj_right, (4,), (1,))
-
-            Psia_ = _contract(Va[ell-1], Psia_, (2,), (1,))
-            Psib_ = _contract(Vb[ell-1], Psib_, (2,), (1,))
-
-            R = _contract(B_proj_right', R, (2,), (2,))
-            R = _contract(A_proj_right', R, (2,), (2,))
-            # A_reconstructed = _contract(A_proj_left', A_, (2,), (1,))
-            # B_reconstructed = _contract(B_proj_left', B_, (2,), (1,))
-
-            # println("checkorthogonality: $(checkorthogonality(A)), $(checkorthogonality(B)), $(checkorthogonality(X))")
-            # println("errors reconstructions at $i in Psi: $(maximum(abs.(A_reconstructed - Psia[ell]))), $(maximum(abs.(B_reconstructed - Psib[ell])))")
-        else
-            Psia_ = _contract(Va[ell-1], Psia[ell], (2,), (1,))
-            Psib_ = _contract(Vb[ell-1], Psib[ell], (2,), (1,))
-        end
-        Psic_ = _contract(Vc[ell-1], Psic[ell], (2,), (1,))
-
-        # println("Psia_ max: $(maximum(abs.(Psia_)))")
-        # println("Psib_ max: $(maximum(abs.(Psib_)))")
-        # println("Psic_ max: $(maximum(abs.(Psic_)))")
-
-        # println("Random=$random_env, dims at R[$ell]: Psia=$(size(Psia_)), Psib=$(size(Psib_)), Psic=$(size(Psic_))")
-
-
-        # time_r = time_ns()
-        R = _contract(conj(Psic_), R, (4,), (3,))
-        R = _contract(Psib_, R, (3,4,), (3,5,))
-        R =  _contract(Psia_, R, (2,3,4), (4,2,5,))
-        # time_r = (time_ns() - time_r)*1e-9
-        # println("INV random=$random_env in $time_r at R[$ell]: Psia=$(size(Psia_)), Psib=$(size(Psib_)), Psic=$(size(Psic_))")
-
-
-        # println("R at step $ell max: $(maximum(abs.(R)))")
-    end
-    return R
-end
-
 # Compute left environment
 function evaluateleft(
     obj::Contraction{ValueType},
@@ -747,36 +524,41 @@ end
 
 # If Ri = i, then R is the right environment until site i+1, which has size (size(A[i])[end], size(B[i])[end], size(X[i]])[end])
 # If Li = i, then L is the left environment until site i-1, which has size (size(A[i])[1], size(B[i])[1], size(X[i]])[1])
-function updatecore!(A::TCI.AbstractTensorTrain{ValueType}, B::TCI.AbstractTensorTrain{ValueType}, X::TCI.AbstractTensorTrain{ValueType}, i::Int,
+function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueType,4}, C::SiteTensorTrain{ValueType,4}, i::Int,
     L::Array{ValueType,3}, R::Array{ValueType,3};
-    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false
+    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Aip1 = TCI.sitetensor(A, i+1)
+    Bip1 = TCI.sitetensor(B, i+1)
+
     # Compute left and right effective environments
     Le = if random_update
-        A_proj = random_project_right(A[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-        B_proj = random_project_right(B[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-        Ai = _contract(A[i], A_proj, (4,), (1,))
-        Bi = _contract(B[i], B_proj, (4,), (1,))
+        A_proj = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        Ai = _contract(Ai, A_proj, (4,), (1,))
+        Bi = _contract(Bi, B_proj, (4,), (1,))
         _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     else
-        _contract(_contract(L, A[i], (1,), (1,)), B[i], (1, 4), (1, 2))
+        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     end
     
     Re = if random_update
-        A_proj = random_project_right(A[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-        B_proj = random_project_right(B[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
-        Aip1 = _contract(A_proj, A[i+1], (1,), (1,))
-        Bip1 = _contract(B_proj, B[i+1], (1,), (1,))
+        A_proj = random_project_right(Aip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj = random_project_right(Bip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        Aip1 = _contract(A_proj, Aip1, (1,), (1,))
+        Bip1 = _contract(B_proj, Bip1, (1,), (1,))
         _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
     else
-        _contract(B[i+1], _contract(A[i+1], R, (4,), (1,)), (2, 4), (3, 4))
+        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
     end
     
     # Contract environments and factorize
     Ce = _contract(Le, Re, (3, 5), (3, 1)) |>
-         C -> permutedims(C, (1, 2, 3, 5, 4, 6)) |>
-         C -> reshape(C, prod(size(C)[1:3]), prod(size(C)[4:6]))
+         Ce -> permutedims(Ce, (1, 2, 3, 5, 4, 6)) |>
+         Ce -> reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6]))
     
     left, right, newbonddim, disc = _factorize(
         Ce, method; 
@@ -785,42 +567,115 @@ function updatecore!(A::TCI.AbstractTensorTrain{ValueType}, B::TCI.AbstractTenso
     )
     
     # Update cores
-    X[i] = reshape(left, :, size(X[i])[2:3]..., newbonddim)
-    X[i+1] = reshape(right, newbonddim, size(X[i+1])[2:3]..., :)
+    C_i = reshape(left, :, size(C[i], 2), size(C[i], 3), newbonddim)
+    C_ip1 = reshape(right, newbonddim, size(C[i+1], 2), size(C[i+1], 3), :)
     
-    disc
+    
+    if direction == :forward
+        movecenterright!(A)
+        movecenterright!(B)
+    else
+        movecenterleft!(A)
+        movecenterleft!(B)
+    end
+    settwositetensors!(C, i, C_i, C_ip1)
+    return disc
 end
 
-function updatecore!(Psia::TCI.AbstractTensorTrain{ValueType}, Va::Vector{Matrix{ValueType}}, Psib::TCI.AbstractTensorTrain{ValueType}, 
-    Vb::Vector{Matrix{ValueType}}, Psic::TCI.TensorTrain{ValueType, 4}, Vc::Vector{Matrix{ValueType}}, i::Int,
+function leftenvironment!(
+    Ls::Vector{Array{ValueType,3}},
+    A::SiteTensorTrain{ValueType, 4},
+    B::SiteTensorTrain{ValueType, 4},
+    C::SiteTensorTrain{ValueType, 4},
+    i::Int;
+    random_env::Bool = false, p::Int=0
+)::Array{ValueType, 3} where {ValueType}
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Ci = TCI.sitetensor(C, i)
+
+    if random_env
+        A_proj_left = random_project_left(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj_left = random_project_left(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
+        
+        L = _contract(L, A_proj_left', (1,), (1,))
+        L = _contract(L, B_proj_left', (1,), (1,))
+        L = permutedims(L, (2,3,1,))
+
+        Ai = _contract(A_proj_left, Ai, (2,), (1,))
+        Bi = _contract(B_proj_left, Bi, (2,), (1,))
+    end
+
+    Ls[i] = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
+    Ls[i] = _contract(Ls[i], Bi, (1,4,), (1,2,))
+    Ls[i] = _contract(Ls[i], conj(Ci), (1,2,4,), (1,2,3,))
+end
+
+function rightenvironment!(
+    Rs::Vector{Array{ValueType,3}},
+    A::SiteTensorTrain{ValueType, 4},
+    B::SiteTensorTrain{ValueType, 4},
+    C::SiteTensorTrain{ValueType, 4},
+    i::Int;
+    random_env::Bool = false, p::Int=0
+)::Array{ValueType, 3} where {ValueType}
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Ci = TCI.sitetensor(C, i)
+
+    if random_env
+        A_proj_right = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj_right = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
+        
+        R = _contract(B_proj_right', Rs[i+1], (2,), (2,))
+        R = _contract(A_proj_right', R, (2,), (2,))
+        R = permutedims(R, (2,3,1,))
+
+        Ai = _contract(Ai, A_proj_right, (4,), (1,))
+        Bi = _contract(Bi, B_proj_right, (4,), (1,))
+    end
+
+    Rs[i] = _contract(conj(Ci), get(Rs, i-1, ones(ValueType, 1, 1, 1)), (4,), (3,))
+    Rs[i] = _contract(Bi, Rs[i], (3,4,), (3,5,))
+    Rs[i] = _contract(Ai, Rs[i], (2,3,4), (4,2,5,))
+end
+
+function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{ValueType,4}, C::InverseTensorTrain{ValueType,4}, i::Int,
     L::Array{ValueType,3}, R::Array{ValueType,3};
-    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false
+    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
     # Compute left effective environment
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Yai = inversesingularvalue(A, i)
+    Ybi = inversesingularvalue(B, i)
+    Aip1 = TCI.sitetensor(A, i+1)
+    Bip1 = TCI.sitetensor(B, i+1)
+
     Le = if random_update
-        A_proj = random_project_right(Psia[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
-        B_proj = random_project_right(Psib[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
-        Ai_projected = _contract(Psia[i], A_proj, (4,), (1,))
-        Bi_projected = _contract(Psib[i], B_proj, (4,), (1,))
+        A_proj = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
+        Ai_projected = _contract(Ai, A_proj, (4,), (1,))
+        Bi_projected = _contract(Bi, B_proj, (4,), (1,))
         _contract(_contract(L, Ai_projected, (1,), (1,)), Bi_projected, (1, 4), (1, 2))
     else
-        Ai = _contract(Psia[i], Va[i], (4,), (1,))
-        Bi = _contract(Psib[i], Vb[i], (4,), (1,))
+        Ai = _contract(Ai, Yai, (4,), (1,))
+        Bi = _contract(Bi, Ybi, (4,), (1,))
         _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     end
     
     # Compute right effective environment
     Re = if random_update
-        Aip1 = _contract(Va[i], Psia[i+1], (2,), (1,))
-        Bip1 = _contract(Vb[i], Psib[i+1], (2,), (1,))
-        A_proj = random_project_right(Psia[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
-        B_proj = random_project_right(Psib[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
+        Aip1 = _contract(Yai, Aip1, (2,), (1,))
+        Bip1 = _contract(Ybi, Bip1, (2,), (1,))
+        A_proj = random_project_right(Aip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj = random_project_right(Bip1, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
         Aip1_projected = _contract(A_proj', Aip1, (2,), (1,))
         Bip1_projected = _contract(B_proj', Bip1, (2,), (1,))
         _contract(Bip1_projected, _contract(Aip1_projected, R, (4,), (1,)), (2, 4), (3, 4))
     else
-        _contract(Psib[i+1], _contract(Psia[i+1], R, (4,), (1,)), (2, 4), (3, 4))
+        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
     end
     
     # Contract environments and factorize with diamond
@@ -835,11 +690,89 @@ function updatecore!(Psia::TCI.AbstractTensorTrain{ValueType}, Va::Vector{Matrix
     )
     
     # Update cores with singular values
-    Psic[i] = reshape(left * Diagonal(diamond), :, size(Psic[i])[2:3]..., newbonddim)
-    Psic[i+1] = reshape(Diagonal(diamond) * right, newbonddim, size(Psic[i+1])[2:3]..., :)
-    Vc[i] = Diagonal(diamond.^-1)
+    C_i = reshape(left * Diagonal(diamond), :, size(Psic[i])[2:3]..., newbonddim)
+    C_ip1 = reshape(Diagonal(diamond) * right, newbonddim, size(Psic[i+1])[2:3]..., :)
+    Vc_i = Diagonal(diamond.^-1)
     
-    disc
+    settwositetensors!(C, i, C_i, Vc_i, C_ip1)
+
+    return disc   
+end
+
+
+# Compute left environment
+function leftenvironment!(
+    Ls::Vector{Array{ValueType,3}},
+    A::InverseTensorTrain{ValueType, 4},
+    B::InverseTensorTrain{ValueType, 4},
+    C::InverseTensorTrain{ValueType, 4},
+    i::Int;
+    random_env::Bool = false, p::Int=0
+    )::Array{ValueType, 3} where {ValueType}
+
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Ci = TCI.sitetensor(C, i)
+    Yai = inversesingularvalue(A, i)
+    Ybi = inversesingularvalue(B, i)
+    Yci = inversesingularvalue(C, i)
+
+    if random_env
+        A_proj_left = random_project_left(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj_left = random_project_left(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
+        
+        Ls[i] = _contract(Ls[i], A_proj_left', (1,), (1,))
+        Ls[i] = _contract(Ls[i], B_proj_left', (1,), (1,))
+        Ls[i] = permutedims(Ls[i], (2,3,1,))
+
+        Ai = _contract(A_proj_left, Ai, (2,), (1,))
+        Bi = _contract(B_proj_left, Bi, (2,), (1,))
+    end
+
+    Ai = _contract(Ai, Yai, (4,), (1,))
+    Bi = _contract(Bi, Ybi, (4,), (1,))
+    Ci = _contract(Ci, Yci, (4,), (1,))
+    
+    Ls[i] = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
+    Ls[i] = _contract(Ls[i], Bi, (1,4,), (1,2,))
+    Ls[i] = _contract(Ls[i], conj(Psic_), (1,2,4,), (1,2,3,))
+end
+
+# Compute right environment
+function rightenvironment!(
+    Rs::Vector{Array{ValueType,3}},
+    A::InverseTensorTrain{ValueType, 4},
+    B::InverseTensorTrain{ValueType, 4},
+    C::InverseTensorTrain{ValueType, 4},
+    i::Int;
+    random_env::Bool = false, p::Int=0
+    )::Array{ValueType, 3} where {ValueType}
+
+    Ai = TCI.sitetensor(A, i)
+    Bi = TCI.sitetensor(B, i)
+    Ci = TCI.sitetensor(C, i)
+    Yaim1 = inversesingularvalue(A, i-1)
+    Ybim1 = inversesingularvalue(B, i-1)
+    Ycim1 = inversesingularvalue(C, i-1)
+
+    if random_env
+        A_proj_right = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
+        B_proj_right = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
+
+        Rs[i] = _contract(B_proj_right', Rs[i], (2,), (2,))
+        Rs[i] = _contract(A_proj_right', Rs[i], (2,), (2,))
+
+        Ai = _contract(Ai, A_proj_right, (4,), (1,))
+        Bi = _contract(Bi, B_proj_right, (4,), (1,))
+
+    end
+    Ai = _contract(Yaim1, Ai, (2,), (1,))
+    Bi = _contract(Ybim1, Bi, (2,), (1,))
+    Ci = _contract(Ycim1, Ci, (2,), (1,))
+
+    Rs[i] = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
+    Rs[i] = _contract(Bi, Rs[i], (3,4,), (3,5,))
+    Rs[i] =  _contract(Ai, Rs[i], (2,3,4), (4,2,5,))
 end
 
 """
@@ -855,170 +788,69 @@ Conctractos tensor trains A and B using the fit algorithm.
 - `method::Symbol`: Algorithm or method to use for the computation :SVD, :RSVD, :LU, :CI.
 - `maxbonddim::Int`: Maximum bond dimension allowed during the decomposition.
 """
-function contract_fit(mpoA::TCI.TensorTrain{ValueType,4},
-    mpoB::TCI.TensorTrain{ValueType,4};
+function contract_fit(
+    A::SiteTensorTrain{ValueType,4},
+    B::SiteTensorTrain{ValueType,4};
+    C::SiteTensorTrain{ValueType,4}=deepcopy(A), #TODO try without deepcopy
+    debug::SiteTensorTrain{ValueType,4}=deepcopy(A),
     nsweeps::Int=2,
-    initial_guess::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
-    debug::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
     tolerance::Float64=1e-12,
     method::Symbol=:SVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
     random_update::Bool=false,
     random_env::Bool=false,
-    stable::Bool=true,
+    p::Int=0,
     kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
-    if length(mpoA) != length(mpoB)
+    if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
 
-    n = length(mpoA)
-
-    A = Vector{Array{ValueType, 4}}(undef, n)
-    B = Vector{Array{ValueType, 4}}(undef, n)
-    X = Vector{Array{ValueType, 4}}(undef, n)
-    for i in 1:n
-        A[i] = deepcopy(mpoA.sitetensors[i])
-        B[i] = deepcopy(mpoB.sitetensors[i])
-        if !isnothing(initial_guess)
-            X[i] = deepcopy(initial_guess.sitetensors[i])
-        else
-            if size(mpoA[i])[2] == size(mpoB[i])[3]
-                X[i] = deepcopy(mpoB.sitetensors[i])
-            else
-                X[i] = ones(ValueType, size(mpoB[i])[1], size(mpoA[i])[2], size(mpoB[i])[3], size(mpoB[i])[4])
-            end
-        end
-    end
+    n = length(A)
     
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
-    
-    # println("Pre tutto: $(checkorthogonality(A))")
-    tot_time_qr = 0.
-    tot_time_env = 0.
-    tot_time_update = 0.
 
-    time_qr = time_ns()
-    if !random_env && stable
-        centercanonicalize!(A, 1)
-        centercanonicalize!(B, 1)
-    end
-    centercanonicalize!(X, 1)
-    tot_time_qr += (time_ns() - time_qr)*1e-9
+    setcenter!(A, 1)
+    setcenter!(B, 1)
+    setcenter!(C, 1)
 
-    # println("check A: $(checkorthogonality(A)), B: $(checkorthogonality(B)), X: $(checkorthogonality(X)) using $method, $random_update, $random_env")
-
-    time_env = time_ns()
     # Precompute right environments
     for i in n:-1:3
-        if i == n
-            Rs[i] = rightenvironment(A, B, X, i; random_env)
-        else
-            Rs[i] = rightenvironment(A, B, X, i; R=Rs[i+1], Ri=i, random_env)
-        end
+        rightenvironment!(Rs, A, B, C, i; random_env, p)
     end
-    tot_time_env += (time_ns() - time_env)*1e-9
-
-    # time_pre = (time_ns() - time_pre)*1e-9
-    # println("ABC time_pre=$time_pre with random=$random_env")
-    # println([maximum(abs.(Rs[i])) for i in 3:n])
     
     # It doesn't matter if we repeat update in 1 or n-1, those are negligible
-    # println("Error init: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
     direction = :forward
     for sweep in 1:nsweeps
         tot_disc = 0.0
-        time_sweep = time_ns()
-
-        # Update cores and store Left or Right environment
         if direction == :forward
             for i in 1:n-1
-                # time_center = time_ns()
 
-                time_qr = time_ns()
-                if !random_env && stable
-                    centercanonicalize!(A, i)
-                    centercanonicalize!(B, i)
-                end
-                centercanonicalize!(X, i)
-                tot_time_qr += (time_ns() - time_qr)*1e-9
+                i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                # time_center = (time_ns() - time_center)*1e-9
+                disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
-                time_update = time_ns()
-
-                if i == 1
-                    disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                elseif i == 2
-                    disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                elseif i < n-1
-                    disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
-                else # i == n-1
-                    disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-2], Li=i-1)
-                end
-                # println("Sweep $sweep site $i: disc = $disc")
-
-                # max_disc = max(max_disc, disc)
                 tot_disc += disc
-                tot_time_update += (time_ns() - time_update)*1e-9
-                # println("Error site $i: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
-                # println("ABC time_site=$time_update with random=$random_env")
-                # println("Time site $i A,B,C,rupd=$random_update,renv=$random_env center: $time_center, update: $time_update")
             end
             direction = :backward
         elseif direction == :backward
             for i in n-1:-1:1
-                # time_center = time_ns()
-                
-                time_qr = time_ns()
-                if !random_env && stable
-                    centercanonicalize!(A, i)
-                    centercanonicalize!(B, i)
-                end
-                centercanonicalize!(X, i)
+                i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                tot_time_qr += (time_ns() - time_qr)*1e-9
-                # time_center = (time_ns() - time_center)*1e-9
+                disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
-                time_update = time_ns()
-                if i == n-1
-                    disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i)
-                elseif i == n-2
-                    disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i)
-                elseif i > 1
-                    disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
-                else # i == 1
-                    disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+3], Ri=i+2)
-                end
-                # println("Sweep $sweep site $i: disc = $disc")
-
-                # max_disc = max(max_disc, disc)
                 tot_disc += disc
-                tot_time_update += (time_ns() - time_update)*1e-9
-                # println("Error site $i: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
-                # time_update = (time_ns() - time_update)*1e-9
-                # println("ABC time_site=$time_update with random=$random_env")
-                # println("Time site $i A,B,C,rupd=$random_update,renv=$random_env center: $time_center, update: $time_update")
-                # println("Time site $i A,B,C: $time_site")
             end
             direction = :forward    
         end
 
-        
-        # time_sweep = (time_ns() - time_sweep)*1e-9
-        # println("ABC time_sweep=$time_sweep with random=$random_env")
-        # println("Sweep $sweep: ", [maximum(abs.(X[i])) for i in 1:n])
-        # println("Sweep $sweep: ", checkorthogonality(X))
-        # println("Time sweep $sweep A,B,C,rupd=$random_update,renv=$random_env: $time_sweep")
-
-        # println("Sweep $sweep: tot_disc = $tot_disc")
-        # println("Sweep $sweep: tot_disc = $tot_disc using $method, $random_update, $random_env")
         if tot_disc < tolerance
             break
         end
     end
-    # println("ENV: $tot_time_env, UP: $tot_time_update, QR: $tot_time_qr for random=$random_update")
-    return TCI.TensorTrain{ValueType,4}(X)
+    return C
 end
 
 # TODO remove this
@@ -1034,216 +866,72 @@ function mynorm(tt)
     return sqrt(abs(res[1][1]))
 end
 
-function contract_fit(Psia::TCI.AbstractTensorTrain{ValueType},
-    Va::TCI.AbstractTensorTrain{ValueType},
-    Psib::TCI.AbstractTensorTrain{ValueType},
-    Vb::TCI.AbstractTensorTrain{ValueType};
+function contract_fit(
+    A::InverseTensorTrain{ValueType,4},
+    B::InverseTensorTrain{ValueType,4};
+    C::InverseTensorTrain{ValueType,4}=deepcopy(A),
     nsweeps::Int=2,
-    Psi_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
-    V_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
     tolerance::Float64=1e-12,
-    method::Symbol=:RSVD, # :SVD, :RSVD, :LU, :CI
+    method::Symbol=:SVD,
     maxbonddim::Int=typemax(Int),
     random_update::Bool=false,
     random_env::Bool=false,
-    stable::Bool=true,
-    debug=nothing,
+    p::Int=0,
     kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
-    if length(Psia) != length(Psib)
+    if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
 
-
-    # time_init = time_ns()
-    n = length(Psia)
-
-    Psic = Vector{Array{ValueType, 4}}(undef, n)
-    Vc = Vector{Array{ValueType, 2}}(undef, n)
-
-    for i in 1:n
-        if !isnothing(Psi_init)
-            Psic[i] = deepcopy(Psi_init[i])
-        else
-            Psic[i] = deepcopy(Psia[i])
-        end
-    end
-
-    for i in 1:n-1
-        if !isnothing(V_init)
-            Vc[i] = deepcopy(V_init[i])
-        else
-            Vc[i] = deepcopy(Va[i])
-        end
-    end
-        
+    n = length(A)
+    
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
 
-    # time_init = (time_ns() - time_init)*1e-9
-    # println("time_init=$time_init")
-
-    tot_time_env = 0.
-    tot_time_update = 0.
-    # time_pre = time_ns()
-
-    time_env = time_ns()
     # Precompute right environments
     for i in n:-1:3
-        if i == n
-            Rs[i] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; random_env)
-        else
-            Rs[i] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; R=Rs[i+1], Ri=i, random_env)
-        end
+        rightenvironment!(Rs, A, B, C, i; random_env, p)
     end
-
-    tot_time_env += (time_ns() - time_env)*1e-9
-
-    # time_pre = (time_ns() - time_pre)*1e-9
-    # println("time_pre=$time_pre with random=$random_env")
-
-    # println("Time pre Psi,rupd=$random_update,renv=$random_env: $time_pre")
-
-    # println("Rs pre tutto: $([maximum(abs.(Rs[i])) for i in 3:n])")
-    # It doesn't matter if we repeat update in 1 or n-1, those are negligible
-
-    #=
-    PsiVa = [_contract(Psia[i], Va[i], (4,), (1,)) for i in 1:n-1]
-    PsiVb = [_contract(Psib[i], Vb[i], (4,), (1,)) for i in 1:n-1]
-    PsiVc = [_contract(Psic[i], Vc[i], (4,), (1,)) for i in 1:n-1]
-    push!(PsiVa, Psia[n])
-    push!(PsiVb, Psib[n])
-    push!(PsiVc, Psic[n])
-
-    VPsia = [Psia[1]]
-    VPsib = [Psib[1]]
-    VPsic = [Psic[1]]
-    for i in 1:n-1
-        push!(VPsia, _contract(Va[i], Psia[i+1], (2,), (1,)))
-        push!(VPsib, _contract(Vb[i], Psib[i+1], (2,), (1,)))
-        push!(VPsic, _contract(Vc[i], Psic[i+1], (2,), (1,)))
-    end
-
-    println("Post: PsiVa = $(checkorthogonality(PsiVa)), VPsia = $(checkorthogonality(VPsia))")
-    println("Post: PsiVb = $(checkorthogonality(PsiVb)), VPsib = $(checkorthogonality(VPsib))")
-    println("Post: PsiVc = $(checkorthogonality(PsiVc)), VPsic = $(checkorthogonality(VPsic))")
-    =#
+    
     direction = :forward
     for sweep in 1:nsweeps
         tot_disc = 0.0
-        # Update cores and store Left or Right environment
-        time_sweep = time_ns()
         if direction == :forward
             for i in 1:n-1
-                # println("Maximum Psic: ", [maximum(abs.(Psic[i])) for i in 1:n])
-                # println("Maximum Vc: ", [maximum(abs.(Vc[i])) for i in 1:n-1])
-                # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
+                i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                # time_site = time_ns()
-                time_update = time_ns()
+                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
-                if i == 1
-                    disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                elseif i == 2
-                    disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                elseif i < n-1
-                    disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
-                else # i == n-1
-                    disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-2], Li=i-1)
-                end
-                # println("Sweep $sweep site $i: disc = $disc")
-
-                # max_disc = max(max_disc, disc)
-                # time_site = (time_ns() - time_site)*1e-9
-                tot_time_update += (time_ns() - time_update)*1e-9
-                # println("site $i time_site=$time_site with random=$random_env")
-                # println("Time site $i Psi,rupd=$random_update,renv=$random_env: $time_site")
                 tot_disc += disc
-            #   println("Time update $i = $time_update")
-                # println("At step $i direction $direction")
-                # tmp = [_contract(Psic[i], Vc[i], (4,), (1,)) for i in 1:n-1]
-                # push!(tmp, Psic[n])
-                # println("Error: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(tmp)))")
             end
             direction = :backward
         elseif direction == :backward
             for i in n-1:-1:1
-                # println("Maximum Psic: ", [maximum(abs.(Psic[i])) for i in 1:n])
-                # println("Maximum Vc: ", [maximum(abs.(Vc[i])) for i in 1:n-1])
-                # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
+                i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                time_update = time_ns()
-                if i == n-1
-                    disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i)
-                elseif i == n-2
-                    disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i)
-                elseif i > 1
-                    disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
-                else # i == 1
-                    disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, random_env, R=Rs[i+3], Ri=i+2)
-                end
+                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
-                tot_time_update += (time_ns() - time_update)*1e-9
-                # println("Sweep $sweep site $i: disc = $disc")
-
-                # time_site = (time_ns() - time_site)*1e-9
-                # println("site $i time_site=$time_site with random=$random_env")
-                # println("Time site $i Psi,rupd=$random_update,renv=$random_env: $time_site")
                 tot_disc += disc
-                # println("Time update $i = $time_update")
-                # println("At step $i direction $direction")
-                # tmp = [_contract(Psic[i], Vc[i], (4,), (1,)) for i in 1:n-1]
-                # push!(tmp, Psic[n])
-                # println("Error: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(tmp)))")
-
             end
-            direction = :forward
+            direction = :forward    
         end
-
-        time_sweep = (time_ns() - time_sweep)*1e-9
-        # println("time_sweep=$time_sweep with random=$random_env")
-        # println("Time sweep $sweep Psi,rupd=$random_update,renv=$random_env: $time_sweep")
-
-        # println("Rs: $([maximum(abs.(Rs[i])) for i in 3:n])")
-        # println("Ls: $([maximum(abs.(Ls[i])) for i in 1:n-2])")
-        # println("Maximum Psic*Vc: ", [maximum(abs.(_contract(Psic[i], Vc[i], (4,), (1,)))) for i in 1:n-1])
-
 
         if tot_disc < tolerance
             break
         end
     end
-
-    # println("Orthogonality Psic: ", checkorthogonality(Psic))
-    # println("Maximum Psic: ", [maximum(abs.(Psic[i])) for i in 1:n])
-    # println("Maximum Vc: ", [maximum(abs.(Vc[i])) for i in 1:n-1])
-    # println("Maximum Psic*Vc: ", [maximum(abs.(_contract(Psic[i], Vc[i], (4,), (1,)))) for i in 1:n-1])
-
-    time_final = time_ns()
-    for i in 1:n-1
-        Psic[i] = _contract(Psic[i], Vc[i], (4,), (1,)) # Dispari giusto
-    end
-
-    time_final = (time_ns() - time_final)*1e-9
-    # println("time_final=$time_final")
-    # println("Time final = $time_final")
-    # X[end] = Psic[end]
-    # println("Orthogonality X: ", checkorthogonality(X))
-    # println("Maximum X: ", [maximum(abs.(X[i])) for i in 1:n])
-
-    # println("ENV: $tot_time_env, UPDATE: $tot_time_update for random=$random_update")
-    return TCI.TensorTrain{ValueType,4}(Psic)
+    
+    return C
 end
 
 function contract_distr_fit(
-    Psia::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
-    Va::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
-    Psib::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
-    Vb::Union{Nothing,TCI.AbstractTensorTrain{ValueType}};
+    A::InverseTensorTrain{ValueType,4},
+    B::InverseTensorTrain{ValueType,4};
+    C::InverseTensorTrain{ValueType,4}=deepcopy(A),
     nsweeps::Int=8,
-    Psi_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
-    V_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
-    noderanges::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
+    partitions::Union{Nothing,AbstractVector{<:AbstractRange{Int}}}=nothing,
     tolerance::Float64=1e-12,
     method::Symbol=:RSVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
@@ -1251,24 +939,19 @@ function contract_distr_fit(
     random_env::Bool=false,
     synchedinput::Bool=false,
     synchedoutput::Bool=true,
-    stable::Bool=true,
     kwargs...
 )::TCI.TensorTrain{ValueType,4} where {ValueType}
-    if length(Psia) != length(Psib)
+    if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
 
-    time_init = time_ns()
-    # println("We started")
-    # flush(stdout)
-
-    # println("La tolerance usata e': $tolerance")
     if !synchedinput
-        synchronize_tt!(Psia)
-        synchronize_tt!(Psib)
-        synchronize_tt!(Psi_init)
+        synchronize_tt!(A)
+        synchronize_tt!(B)
+        synchronize_tt!(C)
     end
-    n = length(Psia)
+
+    n = length(A)
 
     Psic = Vector{Array{ValueType, 4}}(undef, n)
     Vc = Vector{Array{ValueType, 2}}(undef, n)
@@ -1298,26 +981,26 @@ function contract_distr_fit(
         mpirank = MPI.Comm_rank(comm)
         juliarank = mpirank + 1
         nprocs = MPI.Comm_size(comm)
-        if noderanges == nothing
+        if partitions == nothing
             if n < 4
                 println("Warning! The TT is too small to be parallelized.")
-                return contract_fit(Psia, Va, Psib, Vb; nsweeps, Psi_init, V_init, tolerance, method, maxbonddim, kwargs...)
+                return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
             end
             if n < 6
                 if nprocs > 2
                     println("Warning! The TT is too small to be parallelized with more than 2 nodes. Some nodes will not be used.")
                 end
                 nprocs = 2
-                noderanges = [1:2,3:n]
+                partitions = [1:2,3:n]
             elseif n == 6
                 if nprocs == 2
-                    noderanges = [1:3,4:6]
+                    partitions = [1:3,4:6]
                 elseif nprocs == 3
-                    noderanges = [1:2,3:4,5:6]
+                    partitions = [1:2,3:4,5:6]
                 else
                     println("Warning! The TT is too small to be parallelized with more than 3 nodes. Some nodes will not be used.")
                     nprocs = 3
-                    noderanges = [1:2,3:4,5:6]
+                    partitions = [1:2,3:4,5:6]
                 end
             else 
                 extra1 = 3 # "Hyperparameter"
@@ -1326,12 +1009,12 @@ function contract_distr_fit(
                     println("Warning! A TT of lenght L can use be parallelized with up to (L-$(extra1 + extraend))/2 nodes. Some nodes will not be used.")
                     # Each node has 2 cores. Except first and last who have 2+extra1 and 2+extraend+n%2
                     if n % 2 == 0
-                        noderanges = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-2],[n-extraend:n])
+                        partitions = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-2],[n-extraend:n])
                     else
-                        noderanges = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-3],[n-1-extraend:n])
+                        partitions = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-3],[n-1-extraend:n])
                     end
                     for _ in div(n - extra1 - extraend, 2)+1:nprocs
-                        push!(noderanges, 1:-1)
+                        push!(partitions, 1:-1)
                     end
                     nprocs = div(n - extra1 - extraend, 2)
                 else
@@ -1347,54 +1030,46 @@ function contract_distr_fit(
                             sites[end-div(i,2)] += 1
                         end
                     end
-                    noderanges = [sum(sites[1:i-1])+1:sum(sites[1:i]) for i in 1:nprocs]
+                    partitions = [sum(sites[1:i-1])+1:sum(sites[1:i]) for i in 1:nprocs]
                 end
             end
         end
     else
         println("Warning! Distributed strategy has been chosen, but MPI is not initialized, please use TCI.initializempi() before contract() and use TCI.finalizempi() afterwards")
-        return contract_fit(Psia, Va, Psib, Vb; nsweeps, Psi_init, V_init, tolerance, method, maxbonddim, kwargs...)
+        return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
     end
 
+    setpartition!(A, partitions[juliarank])
+    setpartition!(B, partitions[juliarank])
+    setpartition!(C, partitions[juliarank])
+
+    first_site = first(partitions[juliarank])
+    last_site = last(partitions[juliarank])
     if nprocs == 1
         println("Warning! Distributed strategy has been chosen, but only one process is running")
-        return contract_fit(Psia, Va, Psib, Vb; nsweeps, Psi_init, V_init, tolerance, method, maxbonddim, kwargs...)
+        return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
     end
 
-    time_init = (time_ns() - time_init)*1e-9
-
-    # println("Node $juliarank: time_init=$time_init s")
     if juliarank <= nprocs
-
-        time_precompute = time_ns()
 
         Ls = Vector{Array{ValueType, 3}}(undef, n)
         Rs = Vector{Array{ValueType, 3}}(undef, n)
 
-        # println("Juliarank $juliarank start maximum Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
-        # println("Juliarank $juliarank start maximum Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
-
-        first = noderanges[juliarank][1]
-        last = noderanges[juliarank][end]
-
         #Ls are left enviroments and Rs are right environments
-        if first != 1
-            init_env = rand(ValueType, size(Psia[first])[1], size(Psib[first])[1], size(Psic[first])[1])
-            Ls[first-1] = init_env ./ sqrt(sum(init_env.^2)) 
-            # Ls[first-1] = ones(ValueType, size(Psia[first])[1], size(Psib[first])[1], size(Psic[first])[1]) # This shouldn't slow down but could
+        if first_site != 1
+            Ls[first_site-1] = rand(ValueType, 
+                first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))))
+            Ls[first_site-1] = Ls[first_site-1] ./ sqrt(sum(Ls[first_site-1].^2)) 
         end
-        if last != n
-            init_env = rand(ValueType, size(Psia[last])[end], size(Psib[last])[end], size(Psic[last])[end])
-            Rs[last+1] = init_env ./ sqrt(sum(init_env.^2))
-            # Rs[last+1] = ones(ValueType, size(Psia[last])[end], size(Psib[last])[end], size(Psic[last])[end]) # This shouldn't slow down but could
+        if last_site != n
+            Rs[last_site+1] = rand(ValueType,
+                last(size(sitetensor(A, last_site))), last(size(sitetensor(A, last_site))), last(size(sitetensor(A, last_site))))
+            Rs[last_site+1] = Rs[last_site+1] ./ sqrt(sum(Rs[last_site+1].^2))
         end
-
-        # println("Juliarank $juliarank prepre max L: $([isassigned(Ls, i) ? maximum(abs.(Ls[i])) : "not" for i in 1:n])")
-        # println("Juliarank $juliarank prepre max R: $([isassigned(Rs, i) ? maximum(abs.(Rs[i])) : "not" for i in 1:n])")
 
         # TODO make so that you can either precompute all or only local environments
         if juliarank % 2 == 1 # Precompute right environment if going forward
-            for i in last:-1:first+2
+            for i in last_site:-1:first_site+2
                 if i == n
                     Rs[i] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; random_env)
                 else
@@ -1402,7 +1077,7 @@ function contract_distr_fit(
                 end
             end
         else # Precompute left environment if going backward
-            for i in first:last-2 # i is never 1
+            for i in first_site:last_site-2 # i is never 1
                 Ls[i] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, i; L=Ls[i-1], Li=i, random_env)
             end
         end
@@ -1418,7 +1093,7 @@ function contract_distr_fit(
             time_sweep = time_ns()
 
             if sweep % 2 == juliarank % 2 # Forward
-                for i in first:last-1
+                for i in first_site:last_site-1
                     # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
                     pre_sizesi = size(Psic[i])
                     pre_sizesip1 = size(Psic[i+1])
@@ -1428,7 +1103,7 @@ function contract_distr_fit(
                         disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
                     elseif i == 2
                         disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == first
+                    elseif i == first_site
                         disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
                     elseif i < n-1
                         disc, Ls[i-1], _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
@@ -1447,7 +1122,7 @@ function contract_distr_fit(
                     tot_disc += disc
                 end
             else
-                for i in last-1:-1:first
+                for i in last_site-1:-1:first_site
                     # println("At site $i: Psia $(size(Psia[i]))-$(size(Psia[i+1])), Psib $(size(Psib[i]))-$(size(Psib[i+1])), Psic $(size(Psic[i]))-$(size(Psic[i+1]))")
                     pre_sizesi = size(Psic[i])
                     pre_sizesip1 = size(Psic[i+1])
@@ -1457,7 +1132,7 @@ function contract_distr_fit(
                         disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
                     elseif i == n-2
                         disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == last-1
+                    elseif i == last_site-1
                         disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
                     elseif i > 1
                         disc, _, Rs[i+2] = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, i; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
@@ -1488,59 +1163,59 @@ function contract_distr_fit(
             if MPI.Initialized()
                 if juliarank % 2 == sweep % 2 # Left
                     if juliarank != nprocs
-                        # println("Prima di comm sx, $juliarank ha $(size(Psic[last])), $(size(Vc[last])), $(size(Psic[last+1]))")
+                        # println("Prima di comm sx, $juliarank ha $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
 
-                        Ls[last-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, last-1; L=Ls[last-2], Li=last-1, random_env)
+                        Ls[last_site-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, last_site-1; L=Ls[last_site-2], Li=last_site-1, random_env)
 
                         sizes = Vector{Int}(undef, 3)
-                        reqs = MPI.Isend(collect(size(Ls[last-1])), comm; dest=mpirank+1, tag=juliarank)
+                        reqs = MPI.Isend(collect(size(Ls[last_site-1])), comm; dest=mpirank+1, tag=juliarank)
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
 
-                        Rs[last+2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
+                        Rs[last_site+2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
                         
-                        reqs = MPI.Isend(Ls[last-1], comm; dest=mpirank+1, tag=juliarank)
-                        reqr = MPI.Irecv!(Rs[last+2], comm; source=mpirank+1, tag=juliarank+1)
+                        reqs = MPI.Isend(Ls[last_site-1], comm; dest=mpirank+1, tag=juliarank)
+                        reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, last; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last-1], Li=last, R=Rs[last+2], Ri=last+1)
+                        disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, last_site; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last_site-1], Li=last_site, R=Rs[last_site+2], Ri=last_site+1)
 
-                        reqs = MPI.Isend(collect(size(Psic[last])), comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(collect(size(Vc[last])), comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(collect(size(Psic[last+1])), comm; dest=mpirank+1, tag=3*juliarank+2)
-
-                        MPI.Waitall([reqs, reqs1, reqs2])
-
-                        # println("Durante sx, $juliarank invia $(size(Psic[last])), $(size(Vc[last])), $(size(Psic[last+1]))")
-                        reqs = MPI.Isend(Psic[last], comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(Vc[last], comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(Psic[last+1], comm; dest=mpirank+1, tag=3*juliarank+2)
+                        reqs = MPI.Isend(collect(size(Psic[last_site])), comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(collect(size(Vc[last_site])), comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs2 = MPI.Isend(collect(size(Psic[last_site+1])), comm; dest=mpirank+1, tag=3*juliarank+2)
 
                         MPI.Waitall([reqs, reqs1, reqs2])
 
-                        Rs[last+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, last+1; R=Rs[last+2], Ri=last+1, random_env)
+                        # println("Durante sx, $juliarank invia $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
+                        reqs = MPI.Isend(Psic[last_site], comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(Vc[last_site], comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs2 = MPI.Isend(Psic[last_site+1], comm; dest=mpirank+1, tag=3*juliarank+2)
 
-                        # println("Dopo comm sx, $juliarank ha $(size(Psic[last])), $(size(Vc[last])), $(size(Psic[last+1]))")
+                        MPI.Waitall([reqs, reqs1, reqs2])
+
+                        Rs[last_site+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, last_site+1; R=Rs[last_site+2], Ri=last_site+1, random_env)
+
+                        # println("Dopo comm sx, $juliarank ha $(size(Psic[last_site])), $(size(Vc[last_site])), $(size(Psic[last_site+1]))")
                     end
                 else # Right
                     if juliarank != 1
-                        # println("Prima di comm dx, $juliarank ha $(size(Psic[first-1])), $(size(Vc[first-1])), $(size(Psic[first]))")
+                        # println("Prima di comm dx, $juliarank ha $(size(Psic[first_site-1])), $(size(Vc[first_site-1])), $(size(Psic[first_site]))")
 
-                        Rs[first+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, first+1; R=Rs[first+2], Ri=first+1, random_env)
+                        Rs[first_site+1] = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, first_site+1; R=Rs[first_site+2], Ri=first_site+1, random_env)
 
                         sizes = Vector{Int}(undef, 3)
-                        reqs = MPI.Isend(collect(size(Rs[first+1])), comm; dest=mpirank-1, tag=juliarank)
+                        reqs = MPI.Isend(collect(size(Rs[first_site+1])), comm; dest=mpirank-1, tag=juliarank)
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
 
-                        Ls[first-2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
-                        reqs = MPI.Isend(Rs[first+1], comm; dest=mpirank-1, tag=juliarank)
-                        reqr = MPI.Irecv!(Ls[first-2], comm; source=mpirank-1, tag=juliarank-1)
+                        Ls[first_site-2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
+                        reqs = MPI.Isend(Rs[first_site+1], comm; dest=mpirank-1, tag=juliarank)
+                        reqr = MPI.Irecv!(Ls[first_site-2], comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
-                        # disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, first-1; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, L=Ls[first-2], Li=first-1, R=Rs[first+1], Ri=first) #center on first
+                        # disc, _, _ = updatecore!(Psia, Va, Psib, Vb, Psic, Vc, first_site-1; method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:forward, L=Ls[first_site-2], Li=first_site-1, R=Rs[first_site+1], Ri=first_site) #center on first_site
 
                         sizes = Vector{Int}(undef, 4)
                         sizes1 = Vector{Int}(undef, 2)
@@ -1555,19 +1230,19 @@ function contract_distr_fit(
                         
                         # println("Durante dx, $juliarank pronto a ricevere $sizes, $sizes1, $sizes2")
 
-                        Psic[first-1] = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
-                        Vc[first-1] = ones(ValueType, sizes1[1], sizes1[2])
-                        Psic[first] = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
+                        Psic[first_site-1] = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
+                        Vc[first_site-1] = ones(ValueType, sizes1[1], sizes1[2])
+                        Psic[first_site] = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
 
-                        reqr = MPI.Irecv!(Psic[first-1], comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(Vc[first-1], comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        reqr2 = MPI.Irecv!(Psic[first], comm; source=mpirank-1, tag=3*(juliarank-1)+2)
+                        reqr = MPI.Irecv!(Psic[first_site-1], comm; source=mpirank-1, tag=3*(juliarank-1))
+                        reqr1 = MPI.Irecv!(Vc[first_site-1], comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        reqr2 = MPI.Irecv!(Psic[first_site], comm; source=mpirank-1, tag=3*(juliarank-1)+2)
 
                         MPI.Waitall([reqr, reqr1, reqr2])
 
-                        Ls[first-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, first-1; L=Ls[first-2], Li=first-1, random_env)
+                        Ls[first_site-1] = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, first_site-1; L=Ls[first_site-2], Li=first_site-1, random_env)
 
-                        # println("Dopo comm dx, $juliarank ha $(size(Psic[first-1])), $(size(Vc[first-1])), $(size(Psic[first]))")
+                        # println("Dopo comm dx, $juliarank ha $(size(Psic[first_site-1])), $(size(Vc[first_site-1])), $(size(Psic[first_site]))")
                     end
                 end
             end
@@ -1578,7 +1253,7 @@ function contract_distr_fit(
             # println("Juliarank $juliarank post comm Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
             # println("Juliarank $juliarank post comm Vc: $([maximum(abs.(Vc[i])) for i in 1:n-1])")
 
-            # max_disc = max(max_disc, disc) # Check last update on edge
+            # max_disc = max(max_disc, disc) # Check last_site update on edge
             tot_disc += disc
 
             # println("Juliarank $juliarank after comm maximum Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
@@ -1589,7 +1264,7 @@ function contract_distr_fit(
             # println("Juliarank $juliarank after comm sweep $sweep Xmax: ", [maximum(X[i]) for i in 1:length(X)])
 
             time_communication = (time_ns() - time_communication)*1e-9
-            # println("Rank $juliarank Sweep $sweep of length $(length(first:last-1)): tot_disc = $tot_disc, time_sweep = $time_sweep, time_communication = $time_communication")
+            # println("Rank $juliarank Sweep $sweep of length $(length(first_site:last_site-1)): tot_disc = $tot_disc, time_sweep = $time_sweep, time_communication = $time_communication")
 
             converged = tot_disc < tolerance
             global_converged = MPI.Allreduce(converged, MPI.LAND, comm)
@@ -1604,7 +1279,7 @@ function contract_distr_fit(
         # println("Per curiosità: $juliarank ha Vc: $([diag(Vc[i]) for i in 1:n-1])")
 
         time_final = time_ns()
-        for i in noderanges[juliarank]
+        for i in partitions[juliarank]
             if i != n
                 Psic[i] = _contract(Psic[i], Vc[i], (4,), (1,))
             end
@@ -1614,10 +1289,10 @@ function contract_distr_fit(
 
         if juliarank == 1
             for j in 2:nprocs
-                Psic[noderanges[j][1]:noderanges[j][end]] = MPI.recv(comm; source=j-1, tag=1)
+                Psic[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
             end
         else
-            MPI.send(Psic[noderanges[juliarank][1]:noderanges[juliarank][end]], comm; dest=0, tag=1)
+            MPI.send(Psic[partitions[juliarank][1]:partitions[juliarank][end]], comm; dest=0, tag=1)
         end
 
         time_final = (time_ns() - time_final)*1e-9
@@ -1645,7 +1320,7 @@ function contract_distr_fit(
         return TCI.TensorTrain{ValueType,4}(Psia) # Anything is fine
     end
 
-    # println("Noderanges: $noderanges")
+    # println("partitions: $partitions")
     # println("My Psic sizes are: $([size(Psic[i]) for i in 1:n])")
 
     # println("Juliarank $juliarank return Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
@@ -1675,7 +1350,7 @@ function contract_distr_fit(
     nsweeps::Int=8,
     initial_guess::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
-    noderanges::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
+    partitions::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
     tolerance::Float64=1e-12,
     method::Symbol=:RSVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
@@ -1727,7 +1402,7 @@ function contract_distr_fit(
         mpirank = MPI.Comm_rank(comm)
         juliarank = mpirank + 1
         nprocs = MPI.Comm_size(comm)
-        if noderanges == nothing
+        if partitions == nothing
             if n < 4
                 println("Warning! The TT is too small to be parallelized.")
                 return contract_fit(mpoA, mpoB; nsweeps, initial_guess, tolerance, method, maxbonddim, kwargs...)
@@ -1737,30 +1412,30 @@ function contract_distr_fit(
                     println("Warning! The TT is too small to be parallelized with more than 2 nodes. Some nodes will not be used.")
                 end
                 nprocs = 2
-                noderanges = [1:2,3:n]
+                partitions = [1:2,3:n]
             elseif n == 6
                 if nprocs == 2
-                    noderanges = [1:3,4:6]
+                    partitions = [1:3,4:6]
                 elseif nprocs == 3
-                    noderanges = [1:2,3:4,5:6]
+                    partitions = [1:2,3:4,5:6]
                 else
                     println("Warning! The TT is too small to be parallelized with more than 3 nodes. Some nodes will not be used.")
                     nprocs = 3
-                    noderanges = [1:2,3:4,5:6]
+                    partitions = [1:2,3:4,5:6]
                 end
             else 
                 extra1 = 3 # "Hyperparameter"
                 extraend = 3
                 if nprocs > div(n - extra1 - extraend, 2) # It's just one update per node.
                     println("Warning! A TT of lenght L can use be parallelized with up to (L-$(extra1 + extraend))/2 nodes. Some nodes will not be used.")
-                    # Each node has 2 cores. Except first and last who have 2+extra1 and 2+extraend+n%2
+                    # Each node has 2 cores. Except first_site and last_site who have 2+extra1 and 2+extraend+n%2
                     if n % 2 == 0
-                        noderanges = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-2],[n-extraend:n])
+                        partitions = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-2],[n-extraend:n])
                     else
-                        noderanges = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-3],[n-1-extraend:n])
+                        partitions = vcat([1:extra1+1],[extra1+i+1:extra1+i+2 for i in 1:2:n-extra1-extraend-3],[n-1-extraend:n])
                     end
                     for _ in div(n - extra1 - extraend, 2)+1:nprocs
-                        push!(noderanges, 1:-1)
+                        push!(partitions, 1:-1)
                     end
                     nprocs = div(n - extra1 - extraend, 2)
                 else
@@ -1776,7 +1451,7 @@ function contract_distr_fit(
                             sites[end-div(i,2)] += 1
                         end
                     end
-                    noderanges = [sum(sites[1:i-1])+1:sum(sites[1:i]) for i in 1:nprocs]
+                    partitions = [sum(sites[1:i-1])+1:sum(sites[1:i]) for i in 1:nprocs]
                 end
             end
         end
@@ -1797,17 +1472,17 @@ function contract_distr_fit(
         Ls = Vector{Array{ValueType, 3}}(undef, n)
         Rs = Vector{Array{ValueType, 3}}(undef, n)
 
-        first = noderanges[juliarank][1]
-        last = noderanges[juliarank][end]
+        first_site = partitions[juliarank][1]
+        last_site = partitions[juliarank][end]
 
         #Ls are left enviroments and Rs are right environments
-        if first != 1
-            init_env = rand(ValueType, size(A[first])[1], size(B[first])[1], size(X[first])[1])
-            Ls[first-1] = init_env ./ sqrt(sum(init_env.^2))
+        if first_site != 1
+            init_env = rand(ValueType, size(A[first_site])[1], size(B[first_site])[1], size(X[first_site])[1])
+            Ls[first_site-1] = init_env ./ sqrt(sum(init_env.^2))
         end
-        if last != n
-            init_env = rand(ValueType, size(A[last])[end], size(B[last])[end], size(X[last])[end])
-            Rs[last+1] = init_env ./ sqrt(sum(init_env.^2))
+        if last_site != n
+            init_env = rand(ValueType, size(A[last_site])[end], size(B[last_site])[end], size(X[last_site])[end])
+            Rs[last_site+1] = init_env ./ sqrt(sum(init_env.^2))
         end
 
         # println("Juliarank $juliarank my A at the start is $([A[i][1,1,1,1] for i in 1:n]), $([A[i][end,end,end,end] for i in 1:n])")
@@ -1815,13 +1490,13 @@ function contract_distr_fit(
 
         if juliarank % 2 == 1 # Precompute right environment if going forward
             if !random_env && stable
-                centercanonicalize!(A, first)
+                centercanonicalize!(A, first_site)
                 # centercanonicalize!(A, 1)
-                centercanonicalize!(B, first)
+                centercanonicalize!(B, first_site)
                 # centercanonicalize!(B, 1)
             end
-            centercanonicalize!(X, first)
-            for i in last:-1:first+2#n:-1:3#last:-1:first+2
+            centercanonicalize!(X, first_site)
+            for i in last_site:-1:first_site+2#n:-1:3#last_site:-1:first_site+2
                 if i == n
                     Rs[i] = rightenvironment(A, B, X, i; random_env)
                 else
@@ -1830,13 +1505,13 @@ function contract_distr_fit(
             end
         else # Precompute left environment if going backward
             if !random_env && stable
-                centercanonicalize!(A, last-1)
+                centercanonicalize!(A, last_site-1)
                 # centercanonicalize!(A, n)
-                centercanonicalize!(B, last-1)
+                centercanonicalize!(B, last_site-1)
                 # centercanonicalize!(B, n)
             end
-            centercanonicalize!(X, last)
-            for i in first:last-2#1:n-2#first:last-2
+            centercanonicalize!(X, last_site)
+            for i in first_site:last_site-2#1:n-2#first_site:last_site-2
                 if i == 1
                     Ls[i] = leftenvironment(A, B, X, i; random_env)
                 else
@@ -1861,7 +1536,7 @@ function contract_distr_fit(
             # println("Juliarank $juliarank starting sweep $sweep, X=$(checkorthogonality(X))")
 
             if sweep % 2 == juliarank % 2
-                for i in first:last-1
+                for i in first_site:last_site-1
                     if !random_env && stable
                         centercanonicalize!(A, i)
                         centercanonicalize!(B, i)
@@ -1875,7 +1550,7 @@ function contract_distr_fit(
                         disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
                     elseif i == 2
                         disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, R=Rs[i+2], Ri=i+1)
-                    elseif i == first
+                    elseif i == first_site
                         disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
                     elseif i < n-1
                         disc, Ls[i-1], _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[i-2], Li=i-1, R=Rs[i+2], Ri=i+1)
@@ -1889,7 +1564,7 @@ function contract_distr_fit(
 
                 end
             else
-                for i in last-1:-1:first
+                for i in last_site-1:-1:first_site
                     if !random_env && stable
                         centercanonicalize!(A, i)
                         centercanonicalize!(B, i)
@@ -1901,7 +1576,7 @@ function contract_distr_fit(
                         disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
                     elseif i == n-2
                         disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i)
-                    elseif i == last-1
+                    elseif i == last_site-1
                         disc, _, _ = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+2], Ri=i+1)
                     elseif i > 1
                         disc, _, Rs[i+2] = updatecore!(A, B, X, i; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[i-1], Li=i, R=Rs[i+3], Ri=i+2)
@@ -1933,55 +1608,55 @@ function contract_distr_fit(
                 if juliarank % 2 == sweep % 2 # Left
                     if juliarank != nprocs
                         if !random_env && stable
-                            centercanonicalize!(A, last)
-                            centercanonicalize!(B, last)
+                            centercanonicalize!(A, last_site)
+                            centercanonicalize!(B, last_site)
                         end
 
-                        Ls[last-1] = leftenvironment(A, B, X, last-1; L=Ls[last-2], Li=last-1, random_env)
+                        Ls[last_site-1] = leftenvironment(A, B, X, last_site-1; L=Ls[last_site-2], Li=last_site-1, random_env)
 
                         sizes = Vector{Int}(undef, 3)
-                        reqs = MPI.Isend(collect(size(Ls[last-1])), comm; dest=mpirank+1, tag=juliarank)
+                        reqs = MPI.Isend(collect(size(Ls[last_site-1])), comm; dest=mpirank+1, tag=juliarank)
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
 
-                        Rs[last+2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
+                        Rs[last_site+2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
                         
-                        reqs = MPI.Isend(Ls[last-1], comm; dest=mpirank+1, tag=juliarank)
-                        reqr = MPI.Irecv!(Rs[last+2], comm; source=mpirank+1, tag=juliarank+1)
+                        reqs = MPI.Isend(Ls[last_site-1], comm; dest=mpirank+1, tag=juliarank)
+                        reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(A, B, X, last; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last-1], Li=last, R=Rs[last+2], Ri=last+1)
+                        disc, _, _ = updatecore!(A, B, X, last_site; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, random_env, L=Ls[last_site-1], Li=last_site, R=Rs[last_site+2], Ri=last_site+1)
                         
-                        Rs[last+1] = rightenvironment(A, B, X, last+1; R=Rs[last+2], Ri=last+1, random_env)
+                        Rs[last_site+1] = rightenvironment(A, B, X, last_site+1; R=Rs[last_site+2], Ri=last_site+1, random_env)
                     end
                 else # Right
                     if juliarank != 1
                         if !random_env && stable
-                            centercanonicalize!(A, first)
-                            centercanonicalize!(B, first)
+                            centercanonicalize!(A, first_site)
+                            centercanonicalize!(B, first_site)
                         end
 
-                        Rs[first+1] = rightenvironment(A, B, X, first+1; R=Rs[first+2], Ri=first+1, random_env)
+                        Rs[first_site+1] = rightenvironment(A, B, X, first_site+1; R=Rs[first_site+2], Ri=first_site+1, random_env)
 
                         sizes = Vector{Int}(undef, 3)
-                        reqs = MPI.Isend(collect(size(Rs[first+1])), comm; dest=mpirank-1, tag=juliarank)
+                        reqs = MPI.Isend(collect(size(Rs[first_site+1])), comm; dest=mpirank-1, tag=juliarank)
                         reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
 
-                        Ls[first-2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
-                        reqs = MPI.Isend(Rs[first+1], comm; dest=mpirank-1, tag=juliarank)
-                        reqr = MPI.Irecv!(Ls[first-2], comm; source=mpirank-1, tag=juliarank-1)
+                        Ls[first_site-2] = ones(ValueType, sizes[1], sizes[2], sizes[3])
+                        reqs = MPI.Isend(Rs[first_site+1], comm; dest=mpirank-1, tag=juliarank)
+                        reqr = MPI.Irecv!(Ls[first_site-2], comm; source=mpirank-1, tag=juliarank-1)
                         
                         MPI.Waitall([reqs, reqr])
-                        disc, _, _ = updatecore!(A, B, X, first-1; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[first-2], Li=first-1, R=Rs[first+1], Ri=first) #center on first
+                        disc, _, _ = updatecore!(A, B, X, first_site-1; method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, random_env, L=Ls[first_site-2], Li=first_site-1, R=Rs[first_site+1], Ri=first_site) #center on first_site
 
-                        Ls[first-1] = leftenvironment(A, B, X, first-1; L=Ls[first-2], Li=first-1, random_env)
+                        Ls[first_site-1] = leftenvironment(A, B, X, first_site-1; L=Ls[first_site-2], Li=first_site-1, random_env)
                     end
                 end
             end
-            # max_disc = max(max_disc, disc) # Check last update on edge
+            # max_disc = max(max_disc, disc) # Check last_site update on edge
             tot_disc += disc
 
 
@@ -2010,10 +1685,10 @@ function contract_distr_fit(
             if ((juliarank - 1) % (2*delta)) == 0 # I'm a receiver
                 juliapartner = juliarank + delta
                 # println("Out of $nprocs, I am juliarank $juliarank at round $s receiving from $juliapartner")
-                my_first = noderanges[juliarank][1]
-                partner_first = noderanges[juliapartner][1]
+                my_first = partitions[juliarank][1]
+                partner_first = partitions[juliapartner][1]
                 my_last  = partner_first - 1
-                partner_last  = noderanges[juliapartner+delta-1][end]
+                partner_last  = partitions[juliapartner+delta-1][end]
                 # println("Out of $nprocs, I am juliarank $juliarank at round $s with $my_first:$my_last receiving from $juliapartner with $partner_first:$partner_last")
 
                 juliapartner = juliarank + delta
@@ -2077,12 +1752,12 @@ function contract_distr_fit(
                 # Provo con L e R_test:
                 # R è sicuramente sbagliato.
             elseif (s == 1) || (((juliarank - 1) % (2*delta)) == delta) # I'm a sender
-                # println("Juliarank $juliarank is a sender at round $s and my noderanges last should be noderanges[$(juliarank+delta-1)] since delta=$delta, but max is $(length(noderanges))")
+                # println("Juliarank $juliarank is a sender at round $s and my partitions last_site should be partitions[$(juliarank+delta-1)] since delta=$delta, but max is $(length(partitions))")
                 juliapartner = juliarank - delta
-                my_first = noderanges[juliarank][1]
-                partner_first = noderanges[juliapartner][1]
+                my_first = partitions[juliarank][1]
+                partner_first = partitions[juliapartner][1]
                 partner_last  = my_first - 1
-                my_last = noderanges[juliarank+delta-1][end]
+                my_last = partitions[juliarank+delta-1][end]
 
                 # println("Juliarank $juliarank is a sender at round $s with $my_first:$my_last sending to $juliapartner with $partner_first:$partner_last")
                 # println("Juliarank $juliarank at round $s trying to center on site $my_first with X=$(checkorthogonality(X)), X=$([size(X[i]) for i in 1:length(X)])")
@@ -2116,39 +1791,6 @@ function contract_distr_fit(
             end
 
         end
-
-#= Extra experiments
-        centercanonicalize!(X, noderanges[juliarank][1])
-        if juliarank == 1
-            centercanonicalize!(X, noderanges[juliarank][end])
-            println("X=$(checkorthogonality(X))")
-        end
-        if juliarank == 1
-            for j in 2:nprocs
-                # centercanonicalize!(X, noderanges[j-1][end])
-                first = noderanges[j][1]
-                last = noderanges[j][end]
-                X[first:last] = MPI.recv(comm; source=j-1, tag=1)
-                X1X2 = _contract(X[first-1], X[first], (4,), (1,))
-                left, sv, right, newbonddim, disc = _factorize(
-                    reshape(X1X2, prod(size(X1X2)[1:3]), prod(size(X1X2)[4:6])),
-                    method; tolerance=0.0, maxbonddim=999, diamond=true
-                    )
-
-                println("X=$(checkorthogonality(X))")
-
-                X[first-1] = reshape(left, size(X[first-1])[1:3]..., newbonddim)
-                X[first] = reshape(diagm(sv)*right, newbonddim, size(X[first])[2:4]...)
-
-                println("X=$(checkorthogonality(X))")
-                centercanonicalize!(X, last)
-                println("X=$(checkorthogonality(X))")
-            end
-        else
-            centercanonicalize!(X, noderanges[juliarank][1])
-            MPI.send(X[noderanges[juliarank][1]:noderanges[juliarank][end]], comm; dest=0, tag=1)
-        end
-=#
 
     end
     nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute

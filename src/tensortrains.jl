@@ -74,8 +74,40 @@ function singularvalues(tt::VidalTensorTrain{ValueType, N}) where {ValueType, N}
     return tt.singularvalues
 end
 
+function singularvalue(tt::InverseTensorTrain{ValueType, N}, i::Int) where {ValueType, N}
+    return tt.singularvalues[i]
+end
+
 function partition(tt::VidalTensorTrain{ValueType, N}) where {ValueType, N}
     return tt.partition
+end
+
+function setpartition!(tt::VidalTensorTrain{ValueType,N}, newpartition::AbstractRange{Integer}) where {ValueType,N}
+    n = length(tt.sitetensors)
+    step(newpartition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
+    first(newpartition) >= 1 && last(newpartition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
+    for i in first(partition):last(partition)-1
+        if (last(size(sitetensors[i])) != size(sitetensors[i+1], 1))
+            throw(ArgumentError(
+                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
+            ))
+        end
+    end
+
+    for i in first(partition)+1:last(partition)-1
+        if !isrightorthogonal(_contract(sitetensors[i], singularvalues[i], (4,), (1,)))
+            throw(ArgumentError(
+                "Error: contracting the tensor at $i with the singular value at $i does not lead to a right-orthogonal tensor."
+            ))
+        end
+        if !isleftorthogonal(_contract(singularvalues[i-1], sitetensors[i], (2,), (1,)))
+            throw(ArgumentError(
+                "Error: contracting the singular value at $(i-1) with the tensor at $i does not lead to a left-orthogonal tensor."
+            ))
+        end
+    end
+    
+    tt.partition = newpartition
 end
 
 
@@ -215,8 +247,39 @@ function inversesingularvalues(tt::InverseTensorTrain{ValueType, N}) where {Valu
     return tt.inversesingularvalues
 end
 
+function inversesingularvalue(tt::InverseTensorTrain{ValueType, N}, i::Int) where {ValueType, N}
+    return tt.inversesingularvalues[i]
+end
+
 function partition(tt::InverseTensorTrain{ValueType, N}) where {ValueType, N}
     return tt.partition
+end
+
+function settwositetensors!(tt::InverseTensorTrain{ValueType,N}, i::Int, tensor1::AbstractArray{ValueType,N}, matrix::AbstractMatrix{ValueType}, tensor2::AbstractArray{ValueType,N}) where {ValueType,N}
+    tt.sitetensors[i] = tensor1
+    tt.inversesingularvalues[i] = matrix
+    tt.sitetensors[i+1] = tensor2
+    # TODO don't check all
+    for i in first(partition):last(partition)-1
+        if (last(size(sitetensors[i])) != size(sitetensors[i+1], 1))
+            throw(ArgumentError(
+                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
+            ))
+        end
+    end
+
+    for i in first(partition):last(partition)-1
+        if !isleftorthogonal(_contract(sitetensors[i], inversesingularvalues[i], (4,), (1,)))
+            throw(ArgumentError(
+                "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
+            ))
+        end
+        if !isrightorthogonal(_contract(inversesingularvalues[i], sitetensors[i+1], (2,), (1,)))
+            throw(ArgumentError(
+                "Error: contracting the singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
+            ))
+        end
+    end
 end
 
 function InverseTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType})::InverseTensorTrain{ValueType,N} where {ValueType, N}
@@ -343,6 +406,36 @@ function partition(tt::SiteTensorTrain{ValueType, N}) where {ValueType, N}
     return tt.partition
 end
 
+function settwositetensors!(tt::SiteTensorTrain{ValueType,N}, i::Int, tensor1::AbstractArray{ValueType,N}, tensor2::AbstractArray{ValueType,N}) where {ValueType,N}
+    tt.sitetensors[i] = tensor1
+    tt.sitetensors[i+1] = tensor2
+
+    # TODO don't check all
+    for i in first(tt.partition):last(tt.partition)-1
+        if (last(size(tt.sitetensors[i])) != size(tt.sitetensors[i+1], 1))
+            throw(ArgumentError(
+                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
+            ))
+        end
+    end
+end
+
+function setcenter!(tt::SiteTensorTrain{ValueType,N}, newcenter::Int) where {ValueType,N}
+    if newcenter < first(partition(tt)) || newcenter > last(partition(tt))
+        throw(ArgumentError("newcenter ($newcenter) must lie within partition $(partition(tt))"))
+    end
+    diff = newcenter - center(tt)
+    if diff < 0
+        for c in (center(tt)-1):-1:newcenter
+            tt = move_center_left!(tt)
+        end
+    elseif diff > 0
+        for c in (center(tt)+1):newcenter
+            tt = move_center_right!(tt)
+        end
+    end
+end
+
 function SiteTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType}, center::Int)::SiteTensorTrain{ValueType,N} where {ValueType,N}
     n = length(tt)
     return SiteTensorTrain{ValueType,N}(tt, center, 1:n)
@@ -424,7 +517,7 @@ function sitetensortrain(a, b, c)
     return SiteTensorTrain(a, b, c)
 end
 
-function move_center_right!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N}
+function movecenterright!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N}
     c = center(tt)
     if c >= last(tt.partition)
         throw(ArgumentError("Cannot move center right: already at the rightmost position of partition"))
@@ -447,7 +540,7 @@ function move_center_right!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N
     tt.center = c + 1
 end
 
-function move_center_left!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N}
+function movecenterleft!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N}
     c = center(tt)
     if c <= first(tt.partition)
         throw(ArgumentError("Cannot move center left: already at the leftmost position of partition"))
@@ -473,8 +566,20 @@ function move_center_left!(tt::SiteTensorTrain{ValueType,N}) where {ValueType,N}
     tt.center = c - 1
 end
 
+function movecenterleft(tt::SiteTensorTrain{ValueType,N})::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    tt_copy = deepcopy(tt)
+    movecenterleft!(tt_copy)
+    return tt_copy
+end
+
+function movecenterright(tt::SiteTensorTrain{ValueType,N})::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    tt_copy = deepcopy(tt)
+    movecenterright!(tt_copy)
+    return tt_copy
+end
+
 function centercanonicalize(sitetensors::Vector{Array{ValueType, N}}, center::Int) where {ValueType, N}
-    sitetensors_copy = copy(sitetensors)
+    sitetensors_copy = deepcopy(sitetensors)
     centercanonicalize!(sitetensors_copy, center)
     return sitetensors_copy
 end
