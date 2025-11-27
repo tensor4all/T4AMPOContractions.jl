@@ -7,9 +7,9 @@
 Evaluates the tensor train `tt` at indices given by `indexset` and `jndexset`. This is ment to be used for MPOs.
 """
 function evaluate(
-    tt::AbstractTensorTrain{V},
-    indexset::Union{AbstractVector{LocalIndex},NTuple{N,LocalIndex}},
-    jndexset::Union{AbstractVector{LocalIndex},NTuple{N,LocalIndex}}
+    tt::TCI.AbstractTensorTrain{V},
+    indexset::Union{AbstractVector{TCI.LocalIndex},NTuple{N,TCI.LocalIndex}},
+    jndexset::Union{AbstractVector{TCI.LocalIndex},NTuple{N,TCI.LocalIndex}}
 )::V where {N,V}
     if length(indexset) != length(tt)
         throw(ArgumentError("To evaluate a tt of length $(length(tt)), you have to provide $(length(tt)) indices, but there were $(length(indexset))."))
@@ -24,7 +24,7 @@ end
 Evaluates the average of the tensor train approximation over all lattice sites in an efficient
 factorized manner.
 """
-function average(tt::AbstractTensorTrain{V}) where {V}
+function average(tt::TCI.AbstractTensorTrain{V}) where {V}
     v = transpose(sum(tt[1], dims=(1, 2))[1, 1, :]) / length(tt[1][1, :, 1])
     for T in tt[2:end]
         v *= sum(T, dims=2)[:, 1, :] / length(T[1, :, 1])
@@ -38,7 +38,7 @@ end
 Evaluates the weighted sum of the tensor train approximation over all lattice sites in an efficient
 factorized manner, where w is the vector of vector of weights which has the same length and the same sizes as tt.
 """
-function weightedsum(tt::AbstractTensorTrain{V}, w::Vector{Vector{V}}) where {V}
+function weightedsum(tt::TCI.AbstractTensorTrain{V}, w::Vector{Vector{V}}) where {V}
     length(tt) == length(w) || throw(DimensionMismatch("The length of the Tensor Train is different from the one of the weight vector ($(length(tt)) and $(length(w)))."))
     size(tt[1])[2] == length(w[1]) || throw(DimensionMismatch("The dimension at site 1 of the Tensor Train is different from the one of the weight vector ($(size(tt[1])[2]) and $(length(w[1])))."))
     v = transpose(sum(tt[1].*w[1]', dims=(1, 2))[1, 1, :])
@@ -70,7 +70,7 @@ end
 
 @doc raw"""
     function add(
-        lhs::AbstractTensorTrain{V}, rhs::AbstractTensorTrain{V};
+        lhs::TCI.AbstractTensorTrain{V}, rhs::TCI.AbstractTensorTrain{V};
         factorlhs=one(V), factorrhs=one(V),
         tolerance::Float64=0.0, maxbonddim::Int=typemax(Int)
     ) where {V}
@@ -88,7 +88,7 @@ A new `TensorTrain` representing the function `factorlhs * lhs(v) + factorrhs * 
 See also: [`+`](@ref)
 """
 function add(
-    lhs::AbstractTensorTrain{V}, rhs::AbstractTensorTrain{V};
+    lhs::TCI.AbstractTensorTrain{V}, rhs::TCI.AbstractTensorTrain{V};
     factorlhs=one(V), factorrhs=one(V),
     tolerance::Float64=0.0, maxbonddim::Int=typemax(Int), normalizeerror::Bool=true
 ) where {V}
@@ -108,26 +108,26 @@ function add(
             for ell in 1:L
         ]
     )
-    compress!(tt, :SVD; tolerance, maxbonddim, normalizeerror)
+    TCI.compress!(tt, :SVD; tolerance, maxbonddim, normalizeerror)
     return tt
 end
 
 @doc raw"""
     function subtract(
-        lhs::AbstractTensorTrain{V}, rhs::AbstractTensorTrain{V};
+        lhs::TCI.AbstractTensorTrain{V}, rhs::TCI.AbstractTensorTrain{V};
         tolerance::Float64=0.0, maxbonddim::Int=typemax(Int)
     )
 
 Subtract two tensor trains `lhs` and `rhs`. See [`add`](@ref).
 """
 function subtract(
-    lhs::AbstractTensorTrain{V}, rhs::AbstractTensorTrain{V};
+    lhs::TCI.AbstractTensorTrain{V}, rhs::TCI.AbstractTensorTrain{V};
     tolerance::Float64=0.0, maxbonddim::Int=typemax(Int), normalizeerror::Bool=true
 ) where {V}
     return add(lhs, rhs; factorrhs=-1 * one(V), tolerance, maxbonddim, normalizeerror)
 end
 
-function leftcanonicalize!(tt::AbstractTensorTrain{ValueType}) where {ValueType}
+function leftcanonicalize!(tt::TCI.AbstractTensorTrain{ValueType}) where {ValueType}
     n = length(tt)  # Number of sites
     for i in 1:n-1
         Q, R = qr(reshape(tt[i], prod(size(tt[i])[1:end-1]), size(tt[i])[end]))
@@ -142,7 +142,7 @@ function leftcanonicalize!(tt::AbstractTensorTrain{ValueType}) where {ValueType}
 end
 
 # This creates a TensorTrain which has every site right-canonical except the last
-function rightcanonicalize!(tt::AbstractTensorTrain{ValueType}) where {ValueType}
+function rightcanonicalize!(tt::TCI.AbstractTensorTrain{ValueType}) where {ValueType}
     n = length(tt)  # Number of sites
     for i in n:-1:2
         # Reshape W_i into a matrix (merging right bond and physical indices)
@@ -216,67 +216,6 @@ function vidal_to_inv(G::Vector{Array{ValueType, 4}}, L::Vector{Matrix{ValueType
     return Psi, V
 end
 
-
-function centercanonicalize!(tt::Vector{Array{ValueType, N}}, center::Int; old_center::Int=0) where {ValueType, N}
-    orthogonality = checkorthogonality(tt)
-    n = length(tt)  # Number of sites
-    
-    if count(==( :N ), orthogonality) == 1
-        old_center_ = findfirst(==( :N ), orthogonality)
-        if old_center_ == nothing # Useless, but help JET compiling
-            old_center_ = old_center 
-        end
-        # println("Sto canonicalizzando centrando in $center. ho trovato il centro in $old_center_. Quindi flipperò: $(center < old_center_ ? [size(tt[i]) for i in center:old_center_] : [size(tt[i]) for i in old_center_:center])")
-        if old_center != 0 && old_center != old_center_
-            println("Warning! In centercanonicalize!() old_center has been set as $old_center, but the real old center is $old_center_")
-        end
-    elseif old_center == 0
-        old_center_ = 1
-    else
-        old_center_ = old_center
-    end
-    # LEFT
-    for i in old_center_:center-1
-        Q, R = qr(reshape(tt[i], prod(size(tt[i])[1:end-1]), size(tt[i])[end]))
-        Q = Matrix(Q)
-
-        tt[i] = reshape(Q, size(tt[i])[1:end-1]..., size(Q, 2))  # New bond dimension after Q
-
-        tmptt = reshape(tt[i+1], size(R, 2), :)  # Reshape next tensor
-        tmptt = Matrix(R) * tmptt
-        tt[i+1] = reshape(tmptt, size(tt[i+1])...)  # Reshape back
-    end
-    # RIGHT
-    if count(==( :N ), orthogonality) == 1
-        old_center_ = findfirst(==( :N ), orthogonality)
-        if old_center_ == nothing # Useless, but help JET compiling
-            old_center_ = old_center 
-        end
-        if old_center != 0 && old_center != old_center_
-            println("Warning! In centercanonicalize!() old_center has been set as $old_center, but the real old center is $old_center_")
-        end
-    elseif old_center == 0
-        old_center_ = n
-    else
-        old_center_ = old_center
-    end
-    for i in old_center_:-1:center+1
-        W = tt[i]
-        χl, d1, d2, χr = size(W)
-        W_mat = reshape(W, χl, d1*d2*χr)
-
-        L, Q = lq(W_mat)
-        Q = Matrix(Q)
-        # Reshape Q back into the tt tensor
-        tt[i] = reshape(Q, size(Q, 1), d1, d2, χr)  # New bond dimension after Q
-
-        # Update the previous tt tensor by absorbing L
-        tmptt = reshape(tt[i-1], :, size(L, 1))  # Reshape previous tensor
-        tmptt = tmptt * Matrix(L)
-        tt[i-1] = reshape(tmptt, size(tt[i-1], 1), d1, d2, size(tmptt, 2))  # Reshape back
-    end
-end
-
 function move_center_right!(tt, i)
     A = tt[i]
     d = size(A)
@@ -306,14 +245,14 @@ function move_center_left!(tt, i)
 end
 
 
-function leftcanonicalize(tt::AbstractTensorTrain{ValueType}) where {ValueType}
+function leftcanonicalize(tt::TCI.AbstractTensorTrain{ValueType}) where {ValueType}
     tt_ = deepcopy(tt)
     leftcanonicalize!(tt_)
     return tt_
 end
 
 # This creates a TensorTrain which has every site right-canonical except the last
-function rightcanonicalize(tt::AbstractTensorTrain{ValueType}) where {ValueType}
+function rightcanonicalize(tt::TCI.AbstractTensorTrain{ValueType}) where {ValueType}
     tt_ = deepcopy(tt)
     rightcanonicalize!(tt_)
     return tt_

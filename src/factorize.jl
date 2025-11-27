@@ -9,29 +9,29 @@ function _factorize(
         abstol = tolerance
     end
     if method === :LU
-        factorization = rrlu(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
-        if npivots(factorization) == maxbonddim # TODO is this conceptually right?
+        factorization = TCI.rrlu(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
+        if TCI.npivots(factorization) == maxbonddim # TODO is this conceptually right?
             disc = Inf
         else
             disc = 0.0
         end
-        return left(factorization), right(factorization), npivots(factorization), disc
+        return TCI.left(factorization), TCI.right(factorization), TCI.npivots(factorization), disc
     elseif method === :CI
-        factorization = MatrixLUCI(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
-        if npivots(factorization) == maxbonddim # TODO is this conceptually right?
+        factorization = TCI.MatrixLUCI(A, abstol=abstol, reltol=reltol, maxrank=maxbonddim, leftorthogonal=leftorthogonal)
+        if TCI.npivots(factorization) == maxbonddim # TODO is this conceptually right?
             disc = Inf
         else
             disc = 0.0
         end
-        return left(factorization), right(factorization), npivots(factorization), disc
+        return TCI.left(factorization), TCI.right(factorization), TCI.npivots(factorization), disc
     elseif method === :SVD
         factorization = LinearAlgebra.svd(A)
         err = [sum(factorization.S[n+1:end] .^ 2) for n in 1:length(factorization.S)]
         normalized_err = err ./ sum(factorization.S .^ 2)
 
         trunci = min(
-            replacenothing(findfirst(<(abstol^2), err), length(err)),
-            replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
+            TCI.replacenothing(findfirst(<(abstol^2), err), length(err)),
+            TCI.replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
             maxbonddim
         )
 
@@ -97,8 +97,8 @@ function _factorize(
         normalized_err = err ./ sum(factorization.S .^ 2)
 
         trunci = min(
-            replacenothing(findfirst(<(abstol^2), err), length(err)),
-            replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
+            TCI.replacenothing(findfirst(<(abstol^2), err), length(err)),
+            TCI.replacenothing(findfirst(<(reltol^2), normalized_err), length(normalized_err)),
             maxbonddim
         )
 
@@ -166,5 +166,13 @@ function _factorize(
 end
 
 function IMPO(R::Int)
-    return TensorTrain{Float64, 4}([reshape([1.,0.,0.,1.], 1,2,2,1) for _ in 1:R])
+    return TCI.TensorTrain{Float64, 4}([reshape([1.,0.,0.,1.], 1,2,2,1) for _ in 1:R])
+end
+
+function reshapephysicalright(T::AbstractArray{ValueType, N}) where {ValueType, N}
+    return reshape(T, first(size(T)), :)
+end
+
+function reshapephysicalleft(T::AbstractArray{ValueType, N}) where {ValueType, N}
+    return reshape(T, :, last(size(T)))
 end

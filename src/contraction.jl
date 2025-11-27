@@ -2,30 +2,29 @@
 Contraction of two TTOs
 Optionally, the contraction can be done with a function applied to the result.
 """
-struct Contraction{T} <: BatchEvaluator{T}
-    mpo::NTuple{2,TensorTrain{T,4}}
-    leftcache::Dict{Vector{Tuple{Int,Int}},Matrix{T}}
-    rightcache::Dict{Vector{Tuple{Int,Int}},Matrix{T}}
+struct Contraction{ValueType} <: TCI.BatchEvaluator{ValueType}
+    mpo::NTuple{2,TCI.TensorTrain{ValueType,4}}
+    leftcache::Dict{Vector{Tuple{Int,Int}},Matrix{ValueType}}
+    rightcache::Dict{Vector{Tuple{Int,Int}},Matrix{ValueType}}
     f::Union{Nothing,Function}
     sitedims::Vector{Vector{Int}}
 end
 
-
 Base.length(obj::Contraction) = length(obj.mpo[1])
 
-function sitedims(obj::Contraction{T})::Vector{Vector{Int}} where {T}
+function sitedims(obj::Contraction{ValueType})::Vector{Vector{Int}} where {ValueType}
     return obj.sitedims
 end
 
-function Base.lastindex(obj::Contraction{T}) where {T}
+function Base.lastindex(obj::Contraction{ValueType}) where {ValueType}
     return lastindex(obj.mpo[1])
 end
 
-function Base.getindex(obj::Contraction{T}, i) where {T}
+function Base.getindex(obj::Contraction{ValueType}, i) where {ValueType}
     return getindex(obj.mpo[1], i)
 end
 
-function Base.show(io::IO, obj::Contraction{T}) where {T}
+function Base.show(io::IO, obj::Contraction{ValueType}) where {ValueType}
     print(
         io,
         "$(typeof(obj)) of tensor trains with ranks $(rank(obj.mpo[1])) and $(rank(obj.mpo[2]))",
@@ -33,10 +32,10 @@ function Base.show(io::IO, obj::Contraction{T}) where {T}
 end
 
 function Contraction(
-    a::TensorTrain{T,4},
-    b::TensorTrain{T,4};
+    a::TCI.TensorTrain{ValueType,4},
+    b::TCI.TensorTrain{ValueType,4};
     f::Union{Nothing,Function}=nothing,
-) where {T}
+) where {ValueType}
     mpo = a, b
     if length(unique(length.(mpo))) > 1
         throw(ArgumentError("Tensor trains must have the same length."))
@@ -54,14 +53,14 @@ function Contraction(
 
     return Contraction(
         mpo,
-        Dict{Vector{Tuple{Int,Int}},Matrix{T}}(),
-        Dict{Vector{Tuple{Int,Int}},Matrix{T}}(),
+        Dict{Vector{Tuple{Int,Int}},Matrix{ValueType}}(),
+        Dict{Vector{Tuple{Int,Int}},Matrix{ValueType}}(),
         f,
         sitedims
     )
 end
 
-_localdims(obj::TensorTrain{<:Any,4}, n::Int)::Tuple{Int,Int} =
+_localdims(obj::TCI.TensorTrain{<:Any,4}, n::Int)::Tuple{Int,Int} =
     (size(obj[n], 2), size(obj[n], 3))
 _localdims(obj::Contraction{<:Any}, n::Int)::Tuple{Int,Int} =
     (size(obj.mpo[1][n], 2), size(obj.mpo[2][n], 3))
@@ -92,15 +91,15 @@ function _contract(
     return reshape(amat * bmat, _getindex(size(a), rest_idx_a)..., _getindex(size(b), rest_idx_b)...)
 end
 
-function _unfuse_idx(obj::Contraction{T}, n::Int, idx::Int)::Tuple{Int,Int} where {T}
+function _unfuse_idx(obj::Contraction{ValueType}, n::Int, idx::Int)::Tuple{Int,Int} where {ValueType}
     return reverse(divrem(idx - 1, _localdims(obj, n)[1]) .+ 1)
 end
 
-function _fuse_idx(obj::Contraction{T}, n::Int, idx::Tuple{Int,Int})::Int where {T}
+function _fuse_idx(obj::Contraction{ValueType}, n::Int, idx::Tuple{Int,Int})::Int where {ValueType}
     return idx[1] + _localdims(obj, n)[1] * (idx[2] - 1)
 end
 
-function _extend_cache(oldcache::Matrix{T}, a_ell::Array{T,4}, b_ell::Array{T,4}, i::Int, j::Int) where {T}
+function _extend_cache(oldcache::Matrix{ValueType}, a_ell::Array{ValueType,4}, b_ell::Array{ValueType,4}, i::Int, j::Int) where {ValueType}
     # (link_a, link_b) * (link_a, s, link_a') => (link_b, s, link_a')
     tmp1 = _contract(oldcache, a_ell[:, i, :, :], (1,), (1,))
 
@@ -108,7 +107,7 @@ function _extend_cache(oldcache::Matrix{T}, a_ell::Array{T,4}, b_ell::Array{T,4}
     return _contract(tmp1, b_ell[:, :, j, :], (1, 2), (1, 2))
 end
 
-function svd_project_right(A::Array{T,4}, max_r::Int; p::Int=2) where {T}
+function svd_project_right(A::Array{ValueType,4}, max_r::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, prod(size(A)[1:3]), size(A)[4])
     _, A_proj, _, disc = _factorize(A_, :SVD; maxbonddim=max_r+p, tolerance=0.0, leftorthogonal=false)
     # println("Discarded proj_right: $disc")
@@ -116,7 +115,7 @@ function svd_project_right(A::Array{T,4}, max_r::Int; p::Int=2) where {T}
     return A_proj'
 end
 
-function svd_project_left(A::Array{T,4}, max_l::Int; p::Int=2) where {T}
+function svd_project_left(A::Array{ValueType,4}, max_l::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, size(A)[1], prod(size(A)[2:4]))
     A_proj, _, _, disc = _factorize(A_, :SVD, maxbonddim=max_l+p, tolerance=0.0, leftorthogonal=true)
     # println("Discarded proj_left: $disc")
@@ -124,7 +123,7 @@ function svd_project_left(A::Array{T,4}, max_l::Int; p::Int=2) where {T}
     return A_proj'
 end
 
-function random_project_right(A::Array{T,4}, max_r::Int; p::Int=2) where {T}
+function random_project_right(A::Array{ValueType,4}, max_r::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, prod(size(A)[1:3]), size(A)[4])
     A_proj = Matrix(qr(A_'*randn(size(A_)[1], max_r+p)).Q)
 
@@ -133,7 +132,7 @@ function random_project_right(A::Array{T,4}, max_r::Int; p::Int=2) where {T}
     return A_proj
 end
 
-function random_project_left(A::Array{T,4}, max_l::Int; p::Int=2) where {T}
+function random_project_left(A::Array{ValueType,4}, max_l::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, size(A)[1], prod(size(A)[2:4]))
     A_proj = Matrix(qr(A_*randn(size(A_)[2], max_l+p)).Q)'
 
@@ -144,22 +143,22 @@ end
 
 # Compute full left environment
 function leftenvironment(
-    A::Vector{Array{T,4}},
-    B::Vector{Array{T,4}},
-    X::Vector{Array{T,4}},
+    A::TCI.AbstractTensorTrain{ValueType},
+    B::TCI.AbstractTensorTrain{ValueType},
+    X::TCI.AbstractTensorTrain{ValueType},
     i::Int;
-    # L::Array{T, 3} = ones(T, 1, 1, 1),
-    L::Union{Nothing, Array{T, 3}} = nothing,
+    # L::Array{ValueType, 3} = ones(ValueType, 1, 1, 1),
+    L::Union{Nothing, Array{ValueType, 3}} = nothing,
     Li::Int = 1,
     random_env::Bool = false
-)::Array{T, 3} where {T}
-    L === nothing && (L = ones(T, 1, 1, 1))
+)::Array{ValueType, 3} where {ValueType}
+    L === nothing && (L = ones(ValueType, 1, 1, 1))
     # println("Left environment ABC $i, init: $(size(L))")
     for ell in Li:i
         A_ = B_ = nothing
         if random_env
-            A_proj_left = random_project_left(A[ell], Int(ceil(sqrt(maximum(linkdims(A))))); p=0)
-            B_proj_left = random_project_left(B[ell], Int(ceil(sqrt(maximum(linkdims(B))))); p=0)
+            A_proj_left = random_project_left(A[ell], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
+            B_proj_left = random_project_left(B[ell], Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p=0)
             
             L = _contract(L, A_proj_left', (1,), (1,))
             L = _contract(L, B_proj_left', (1,), (1,))
@@ -195,24 +194,24 @@ end
 
 # Compute left environment
 function leftenvironment(
-    Psia::Vector{Array{T,4}},
-    Va::Vector{Matrix{T}},
-    Psib::Vector{Array{T,4}},
-    Vb::Vector{Matrix{T}},
-    Psic::Vector{Array{T,4}},
-    Vc::Vector{Matrix{T}},
+    Psia::TCI.AbstractTensorTrain{ValueType},
+    Va::TCI.AbstractTensorTrain{ValueType},
+    Psib::TCI.AbstractTensorTrain{ValueType},
+    Vb::TCI.AbstractTensorTrain{ValueType},
+    Psic::TCI.AbstractTensorTrain{ValueType},
+    Vc::TCI.AbstractTensorTrain{ValueType},
     i::Int;
-    L::Union{Nothing, Array{T, 3}} = nothing,
+    L::Union{Nothing, Array{ValueType, 3}} = nothing,
     Li::Int = 1,
     random_env::Bool = false
-    )::Array{T, 3} where {T}
-    L === nothing && (L = ones(T, 1, 1, 1))
+    )::Array{ValueType, 3} where {ValueType}
+    L === nothing && (L = ones(ValueType, 1, 1, 1))
     # println("Left environment PSI $i, init: $(size(L))")
     for ell in Li:i
         Psia_ = Psib_ = Va_ = Vb_ = nothing
         if random_env
-            A_proj_left = random_project_left(Psia[ell], Int(ceil(sqrt(maximum(linkdims(Psia))))); p=0)
-            B_proj_left = random_project_left(Psib[ell], Int(ceil(sqrt(maximum(linkdims(Psib))))); p=0)
+            A_proj_left = random_project_left(Psia[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
+            B_proj_left = random_project_left(Psib[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
             
             L = _contract(L, A_proj_left', (1,), (1,))
             L = _contract(L, B_proj_left', (1,), (1,))
@@ -253,21 +252,21 @@ end
 
 # Compute full right environment
 function rightenvironment(
-    A::Vector{Array{T,4}},
-    B::Vector{Array{T,4}},
-    X::Vector{Array{T,4}},
+    A::TCI.AbstractTensorTrain{ValueType},
+    B::TCI.AbstractTensorTrain{ValueType},
+    X::TCI.AbstractTensorTrain{ValueType},
     i::Int;
-    R::Union{Nothing, Array{T, 3}} = nothing,
+    R::Union{Nothing, Array{ValueType, 3}} = nothing,
     Ri::Int = length(A),
     random_env::Bool = false
-    )::Array{T, 3} where {T}
-    R === nothing && (R = ones(T, 1, 1, 1))
+    )::Array{ValueType, 3} where {ValueType}
+    R === nothing && (R = ones(ValueType, 1, 1, 1))
     # println("Right environment ABC $i, init: $(size(R))")
     for ell in Ri:-1:i
         A_ = B_ = nothing
         if random_env
-            A_proj_right = random_project_right(A[ell], Int(ceil(sqrt(maximum(linkdims(A))))); p=0)
-            B_proj_right = random_project_right(B[ell], Int(ceil(sqrt(maximum(linkdims(B))))); p=0)
+            A_proj_right = random_project_right(A[ell], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
+            B_proj_right = random_project_right(B[ell], Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p=0)
 
             A_ = _contract(A[ell], A_proj_right, (4,), (1,))
             B_ = _contract(B[ell], B_proj_right, (4,), (1,))
@@ -307,24 +306,24 @@ end
 
 # Compute right environment
 function rightenvironment(
-    Psia::Vector{Array{T,4}},
-    Va::Vector{Matrix{T}},
-    Psib::Vector{Array{T,4}},
-    Vb::Vector{Matrix{T}},
-    Psic::Vector{Array{T,4}},
-    Vc::Vector{Matrix{T}},
+    Psia::TCI.AbstractTensorTrain{ValueType},
+    Va::TCI.AbstractTensorTrain{ValueType},
+    Psib::TCI.AbstractTensorTrain{ValueType},
+    Vb::TCI.AbstractTensorTrain{ValueType},
+    Psic::TCI.AbstractTensorTrain{ValueType},
+    Vc::TCI.AbstractTensorTrain{ValueType},
     i::Int;
-    R::Union{Nothing, Array{T, 3}} = nothing,
+    R::Union{Nothing, Array{ValueType, 3}} = nothing,
     Ri::Int = length(Psia),
     random_env::Bool = false
-    )::Array{T, 3} where {T}
-    R === nothing && (R = ones(T, 1, 1, 1))
+    )::Array{ValueType, 3} where {ValueType}
+    R === nothing && (R = ones(ValueType, 1, 1, 1))
     # println("R init max: $(maximum(abs.(R)))")
     for ell in Ri:-1:i
         Psia_ = Psib_ = Va_ = Vb_ = nothing
         if random_env
-            A_proj_right = random_project_right(Psia[ell], Int(ceil(sqrt(maximum(linkdims(Psia))))); p=0)
-            B_proj_right = random_project_right(Psib[ell], Int(ceil(sqrt(maximum(linkdims(Psib))))); p=0)
+            A_proj_right = random_project_right(Psia[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
+            B_proj_right = random_project_right(Psib[ell], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
 
             Psia_ = _contract(Psia[ell], A_proj_right, (4,), (1,))
             Psib_ = _contract(Psib[ell], A_proj_right, (4,), (1,))
@@ -367,9 +366,9 @@ end
 
 # Compute left environment
 function evaluateleft(
-    obj::Contraction{T},
+    obj::Contraction{ValueType},
     indexset::AbstractVector{Tuple{Int,Int}},
-)::Matrix{T} where {T}
+)::Matrix{ValueType} where {ValueType}
     if length(indexset) >= length(obj.mpo[1])
         error("Invalid indexset: $indexset")
     end
@@ -377,7 +376,7 @@ function evaluateleft(
     a, b = obj.mpo
 
     if length(indexset) == 0
-        return ones(T, 1, 1)
+        return ones(ValueType, 1, 1)
     end
 
     ell = length(indexset)
@@ -399,9 +398,9 @@ end
 
 # Compute right environment
 function evaluateright(
-    obj::Contraction{T},
+    obj::Contraction{ValueType},
     indexset::AbstractVector{Tuple{Int,Int}},
-)::Matrix{T} where {T}
+)::Matrix{ValueType} where {ValueType}
     if length(indexset) >= length(obj.mpo[1])
         error("Invalid indexset: $indexset")
     end
@@ -411,7 +410,7 @@ function evaluateright(
     N = length(obj)
 
     if length(indexset) == 0
-        return ones(T, 1, 1)
+        return ones(ValueType, 1, 1)
     elseif length(indexset) == 1
         i, j = indexset[1]
         return a[end][:, i, :, 1] * transpose(b[end][:, :, j, 1])
@@ -433,7 +432,7 @@ function evaluateright(
 end
 
 
-function evaluate(obj::Contraction{T}, indexset::AbstractVector{Int})::T where {T}
+function evaluate(obj::Contraction{ValueType}, indexset::AbstractVector{Int})::ValueType where {ValueType}
     if length(obj) != length(indexset)
         error("Length mismatch: $(length(obj)) != $(length(indexset))")
     end
@@ -443,9 +442,9 @@ function evaluate(obj::Contraction{T}, indexset::AbstractVector{Int})::T where {
 end
 
 function evaluate(
-    obj::Contraction{T},
+    obj::Contraction{ValueType},
     indexset::AbstractVector{Tuple{Int,Int}},
-)::T where {T}
+)::ValueType where {ValueType}
     if length(obj) != length(indexset)
         error("Length mismatch: $(length(obj)) != $(length(indexset))")
     end
@@ -469,32 +468,32 @@ function _lineari(dims, mi)::Integer
     return li[ci]
 end
 
-function lineari(sitedims::Vector{Vector{Int}}, indexset::Vector{MultiIndex})::Vector{Int}
+function lineari(sitedims::Vector{Vector{Int}}, indexset::Vector{TCI.MultiIndex})::Vector{Int}
     return [_lineari(sitedims[l], indexset[l]) for l in 1:length(indexset)]
 end
 
 
-function (obj::Contraction{T})(indexset::AbstractVector{Int})::T where {T}
+function (obj::Contraction{ValueType})(indexset::AbstractVector{Int})::ValueType where {ValueType}
     return evaluate(obj, indexset)
 end
 
-function (obj::Contraction{T})(indexset::AbstractVector{<:AbstractVector{Int}})::T where {T}
+function (obj::Contraction{ValueType})(indexset::AbstractVector{<:AbstractVector{Int}})::ValueType where {ValueType}
     return evaluate(obj, lineari(obj.sitedims, indexset))
 end
 
-function (obj::Contraction{T})(
-    leftindexset::AbstractVector{MultiIndex},
-    rightindexset::AbstractVector{MultiIndex},
+function (obj::Contraction{ValueType})(
+    leftindexset::AbstractVector{TCI.MultiIndex},
+    rightindexset::AbstractVector{TCI.MultiIndex},
     ::Val{M},
-)::Array{T,M + 2} where {T,M}
+)::Array{ValueType,M + 2} where {ValueType,M}
     return batchevaluate(obj, leftindexset, rightindexset, Val(M))
 end
 
-function batchevaluate(obj::Contraction{T},
-    leftindexset::AbstractVector{MultiIndex},
-    rightindexset::AbstractVector{MultiIndex},
+function batchevaluate(obj::Contraction{ValueType},
+    leftindexset::AbstractVector{TCI.MultiIndex},
+    rightindexset::AbstractVector{TCI.MultiIndex},
     ::Val{M},
-    projector::Union{Nothing,AbstractVector{<:AbstractVector{<:Integer}}}=nothing)::Array{T,M + 2} where {T,M}
+    projector::Union{Nothing,AbstractVector{<:AbstractVector{<:Integer}}}=nothing)::Array{ValueType,M + 2} where {ValueType,M}
     N = length(obj)
     Nr = length(rightindexset[1])
     s_ = length(leftindexset[1]) + 1
@@ -521,16 +520,16 @@ function batchevaluate(obj::Contraction{T},
     ]
 
     t1 = time_ns()
-    linkdims_a = vcat(1, linkdims(a), 1)
-    linkdims_b = vcat(1, linkdims(b), 1)
+    linkdims_a = vcat(1, TCI.linkdims(a), 1)
+    linkdims_b = vcat(1, TCI.linkdims(b), 1)
 
-    left_ = Array{T,3}(undef, length(leftindexset), linkdims_a[s_], linkdims_b[s_])
+    left_ = Array{ValueType,3}(undef, length(leftindexset), linkdims_a[s_], linkdims_b[s_])
     for (i, idx) in enumerate(leftindexset_unfused)
         left_[i, :, :] .= evaluateleft(obj, idx)
     end
     t2 = time_ns()
 
-    right_ = Array{T,3}(
+    right_ = Array{ValueType,3}(
         undef,
         linkdims_a[e_+1],
         linkdims_b[e_+1],
@@ -542,10 +541,10 @@ function batchevaluate(obj::Contraction{T},
     t3 = time_ns()
 
     # (left_index, link_a, link_b, site[s_] * site'[s_] *  ... * site[e_] * site'[e_])
-    leftobj::Array{T,4} = reshape(left_, size(left_)..., 1)
+    leftobj::Array{ValueType,4} = reshape(left_, size(left_)..., 1)
     return_size_siteinds = Int[]
     for n = s_:e_
-        slice_ab, shape_ab = projector_to_slice(projector[n - s_ + 1])
+        slice_ab, shape_ab = TCI.projector_to_slice(projector[n - s_ + 1])
         a_n = begin
             a_n_org = obj.mpo[1][n]
             tmp = a_n_org[:, slice_ab[1], :, :]
@@ -592,9 +591,9 @@ function batchevaluate(obj::Contraction{T},
 end
 
 
-function _contractsitetensors(a::Array{T,4}, b::Array{T,4})::Array{T,4} where {T}
+function _contractsitetensors(a::Array{ValueType,4}, b::Array{ValueType,4})::Array{ValueType,4} where {ValueType}
     # indices: (link_a, s1, s2, link_a') * (link_b, s2, s3, link_b')
-    ab::Array{T,6} = _contract(a, b, (3,), (2,))
+    ab::Array{ValueType,6} = _contract(a, b, (3,), (2,))
     # => indices: (link_a, s1, link_a', link_b, s3, link_b')
     abpermuted = permutedims(ab, (1, 4, 2, 5, 3, 6))
     # => indices: (link_a, link_b, s1, s3, link_a', link_b')
@@ -606,42 +605,42 @@ function _contractsitetensors(a::Array{T,4}, b::Array{T,4})::Array{T,4} where {T
 end
 
 function contract_naive(
-    a::TensorTrain{T,4}, b::TensorTrain{T,4};
+    a::TCI.TensorTrain{ValueType,4}, b::TCI.TensorTrain{ValueType,4};
     tolerance=0.0, maxbonddim=typemax(Int)
-)::TensorTrain{T,4} where {T}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     return contract_naive(Contraction(a, b); tolerance, maxbonddim)
 end
 
 function contract_naive(
-    obj::Contraction{T};
+    obj::Contraction{ValueType};
     tolerance=0.0, maxbonddim=typemax(Int)
-)::TensorTrain{T,4} where {T}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if obj.f isa Function
         error("Naive contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
     end
 
     a, b = obj.mpo
-    tt = TensorTrain{T,4}(_contractsitetensors.(sitetensors(a), sitetensors(b)))
+    tt = TCI.TensorTrain{ValueType,4}(_contractsitetensors.(TCI.sitetensors(a), TCI.sitetensors(b)))
     if tolerance > 0 || maxbonddim < typemax(Int)
-        compress!(tt, :SVD; tolerance, maxbonddim)
+        TCI.compress!(tt, :SVD; tolerance, maxbonddim)
     end
     return tt
 end
 
-function _reshape_fusesites(t::AbstractArray{T}) where {T}
+function _reshape_fusesites(t::AbstractArray{ValueType}) where {ValueType}
     shape = size(t)
     return reshape(t, shape[1], prod(shape[2:end-1]), shape[end]), shape[2:end-1]
 end
 
 function _reshape_splitsites(
-    t::AbstractArray{T},
+    t::AbstractArray{ValueType},
     legdims::Union{AbstractVector{Int},Tuple},
-) where {T}
+) where {ValueType}
     return reshape(t, size(t, 1), legdims..., size(t, ndims(t)))
 end
 
-function _findinitialpivots(f, localdims, nmaxpivots)::Vector{MultiIndex}
-    pivots = MultiIndex[]
+function _findinitialpivots(f, localdims, nmaxpivots)::Vector{TCI.MultiIndex}
+    pivots = TCI.MultiIndex[]
     for _ in 1:nmaxpivots
         pivot_ = [rand(1:d) for d in localdims]
         pivot_ = optfirstpivot(f, localdims, pivot_)
@@ -654,12 +653,12 @@ function _findinitialpivots(f, localdims, nmaxpivots)::Vector{MultiIndex}
 end
 
 function contract_TCI(
-    A::TensorTrain{ValueType,4},
-    B::TensorTrain{ValueType,4};
-    initialpivots::Union{Int,Vector{MultiIndex}}=10,
+    A::TCI.TensorTrain{ValueType,4},
+    B::TCI.TensorTrain{ValueType,4};
+    initialpivots::Union{Int,Vector{TCI.MultiIndex}}=10,
     f::Union{Nothing,Function}=nothing,
     kwargs...
-)::TensorTrain{ValueType,4} where {ValueType}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -687,7 +686,7 @@ function contract_TCI(
         kwargs...,
     )
     legdims = [_localdims(matrixproduct, i) for i = 1:length(tci)]
-    return TensorTrain{ValueType,4}(
+    return TCI.TensorTrain{ValueType,4}(
         [_reshape_splitsites(t, d) for (t, d) in zip(tci, legdims)]
     )
 end
@@ -697,13 +696,13 @@ See SVD version:
 https://tensornetwork.org/mps/algorithms/zip_up_mpo/
 """
 function contract_zipup(
-    A::TensorTrain{ValueType,4},
-    B::TensorTrain{ValueType,4};
+    A::TCI.TensorTrain{ValueType,4},
+    B::TCI.TensorTrain{ValueType,4};
     tolerance::Float64=1e-12,
     method::Symbol=:SVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
     kwargs...
-)::TensorTrain{ValueType,4} where {ValueType}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -743,308 +742,108 @@ function contract_zipup(
         R = reshape(right, newbonddim, size(C)[4:5]...)
     end
 
-    return TensorTrain{ValueType,4}(sitetensors)
-end
-
-function contract_distr_zipup(
-    A::TensorTrain{ValueType,4},
-    B::TensorTrain{ValueType,4};
-    tolerance::Float64=1e-12,
-    method::Symbol=:SVD,
-    p::Int=16,
-    maxbonddim::Int=typemax(Int),
-    estimatedbond::Union{Nothing,Int}=nothing,
-    subcomm::Union{Nothing, MPI.Comm}=nothing,
-    kwargs...
-)::TensorTrain{ValueType,4} where {ValueType}
-    if length(A) != length(B)
-        throw(ArgumentError("Cannot contract tensor trains with different length."))
-    end
-
-    R::Array{ValueType,3} = ones(ValueType, 1, 1, 1)
-
-    if MPI.Initialized()
-        if subcomm != nothing
-            comm = subcomm
-        else
-            comm = MPI.COMM_WORLD
-        end
-        mpirank = MPI.Comm_rank(comm)
-        juliarank = mpirank + 1
-	    nprocs = MPI.Comm_size(comm)
-        if estimatedbond == nothing
-            estimatedbond = maxbonddim == typemax(Int) ? max(maximum(linkdims(A)), maximum(linkdims(B))) : maxbonddim
-        end
-        noderanges = _noderanges(nprocs, length(A), size(A[1])[2]*size(B[1])[3], estimatedbond; interbond=true, algorithm=:mpompo)
-        Us = Vector{Array{ValueType,3}}(undef, length(noderanges[juliarank]))
-        Vts = Vector{Array{ValueType,3}}(undef, length(noderanges[juliarank]))
-    else
-        println("Warning! Distributed zipup has been chosen, but MPI is not initialized, please use initializempi() before using contract() and use finalizempi() afterwards")
-        return contract_zipup(A, B; tolerance, method, maxbonddim, kwargs...)
-    end
-
-    if nprocs == 1
-        println("Warning! Distributed zipup has been chosen, but only one process is running")
-        return contract_zipup(A, B; tolerance, method, maxbonddim, kwargs...)
-    end
-    
-    finalsitetensors =  Vector{Array{ValueType,4}}(undef, length(A))
-
-    time = time_ns()
-    if method == :SVD || method == :RSVD
-        if maxbonddim == typemax(Int)
-            println("Warning! distrzipup uses always Randomized SVD, which cannot accept maxbonddim=typemax(Int), it will be set to the maximum bond of A or B")
-            maxbonddim = max(maximum(linkdims(A)), maximum(linkdims(B)))
-        end
-        for (i, n) in enumerate(noderanges[juliarank])
-            # Random matrix
-            G = randn(size(A[n])[end], size(B[n])[end], maxbonddim+p)
-            # Projection on smaller space
-            Y = _contract(A[n], G, (4,), (1,))
-            Y = _contract(B[n], Y, (2,4,), (3,4))
-            Y = permutedims(Y, (3,1,4,2,5,))
-
-            # QR decomposition
-            Q = Matrix(LinearAlgebra.qr!(reshape(Y, (prod(size(Y)[1:4]), size(Y)[end]))).Q)
-            Q = reshape(Q, (size(Y)[1:4]..., min(prod(size(Y)[1:4]), size(Y)[end])))
-            Qt = permutedims(Q, (5, 3, 4, 1, 2))
-            # Smaller object to SVD
-            to_svd = _contract(Qt, A[n], (2,4,), (2,1,))
-            to_svd = _contract(to_svd, B[n], (2,3,4,), (3,1,2,))
-            factorization = svd(reshape(to_svd, (size(to_svd)[1], prod(size(to_svd)[2:3]))))
-            newbonddimr = min(
-                replacenothing(findlast(>(tolerance), Array(factorization.S)), 1),
-                maxbonddim
-            )
-
-            U = _contract(Q, factorization.U[:, 1:newbonddimr], (5,), (1,))
-            US = _contract(U, Diagonal(factorization.S[1:newbonddimr]), (5,), (1,))
-            U, Vt, newbonddiml, _ = _factorize(
-                reshape(US, prod(size(US)[1:2]), prod(size(US)[3:5])),
-                method; tolerance, maxbonddim, leftorthogonal=true
-            )
-            U = reshape(U, (size(A[n])[1], size(B[n])[1], newbonddiml))
-            finalsitetensors[n] = reshape(Vt, newbonddiml, size(US)[3:5]...)
-
-            Us[i] = U
-            Vts[i] = reshape(factorization.Vt[1:newbonddimr, :], newbonddimr, size(to_svd)[end-1], size(to_svd)[end])
-        end
-    elseif method == :CI || method == :LU
-        for (i, n) in enumerate(noderanges[juliarank])
-            dimsA = size(A[n])
-            dimsB = size(B[n])
-            function f24(j,k; print=false)
-                b1, a1 = Tuple(CartesianIndices((dimsB[1], dimsA[1]))[j])  # Extract (a1, b1) from j
-                b4, a4, b3, a2 = Tuple(CartesianIndices((dimsB[4], dimsA[4], dimsB[3], dimsA[2]))[k])  # Extract (a2, b3, a4, b4) from k
-                sum(A[n][a1, a2, c, a4] * B[n][b1, c, b3, b4] for c in 1:dimsA[3])  # Summing over the contracted index
-            end
-            
-            # Non Zero element to start PRRLU decomposition
-            nz = nothing
-            size_A = size(A[n])  # (i, j, k, l)
-            size_B = size(B[n])  # (m, k, nn, o)
-            
-            for i in 1:size_A[1], m in 1:size_B[1], j in 1:size_A[2], nn in 1:size_B[3], l in 1:size_A[4], o in 1:size_B[4]
-                sum_val = zero(eltype(A[n]))
-                for k in 1:size_A[3]  # k index contraction
-                    if A[n][i, j, k, l] != 0 && B[n][m, k, nn, o] != 0
-                        sum_val += A[n][i, j, k, l] * B[n][m, k, nn, o]
-                    end
-                end
-                if sum_val != 0
-                    nz = [i, m, j, nn, l, o]
-                    break
-                end
-            end
-            
-            # CartesianIndices are read the other way around
-            I0 = [(nz[1]-1)*dimsB[1] + nz[2], (nz[3]-1)*dimsB[3]*dimsA[4]*dimsB[4] + (nz[4]-1)*dimsA[4]*dimsB[4] + (nz[5]-1)*dimsB[4] + nz[6]]
-            J0 = [(nz[1]-1)*dimsB[1] + nz[2], (nz[3]-1)*dimsB[3]*dimsA[4]*dimsB[4] + (nz[4]-1)*dimsA[4]*dimsB[4] + (nz[5]-1)*dimsB[4] + nz[6]]
-            factorization = arrlu(ValueType, f24, (dimsA[1]*dimsB[1], dimsA[2]*dimsB[3]*dimsA[4]*dimsB[4]), I0, J0; abstol=tolerance, maxrank=maxbonddim)
-            L = left(factorization)
-            U = right(factorization)
-            newbonddiml = npivots(factorization)
-            
-            U_3_2 = reshape(U, size(U)[1]*dimsA[2]*dimsB[3], dimsA[4]*dimsB[4])
-            U, Vt, newbonddimr, _ = _factorize(U_3_2, :SVD; tolerance, maxbonddim)
-            Us[i] = reshape(L, dimsA[1], dimsB[1], newbonddiml)
-            finalsitetensors[n] = reshape(U, newbonddiml, dimsA[2], dimsB[3], newbonddimr)
-            Vts[i] = reshape(Vt, newbonddimr, dimsA[4], dimsB[4])
-        end
-    end
-    
-    # Exchange Vt to right
-    if MPI.Initialized()
-        MPI.Barrier(comm)
-        reqs = MPI.Request[]
-        if juliarank < nprocs
-            push!(reqs, MPI.isend(Vts[end], comm; dest=mpirank+1, tag=mpirank))
-        end
-        if juliarank > 1
-            Vts_l = MPI.recv(comm; source=mpirank-1, tag=mpirank-1)
-        end
-        MPI.Waitall(reqs)
-        MPI.Barrier(comm)
-    end
-
-    # contraction
-    time = time_ns()
-    for (i, n) in enumerate(noderanges[juliarank])
-        if i > 1
-            VtU = _contract(Vts[i-1], Us[i], (2,3,), (1,2,))
-            finalsitetensors[n] = _contract(VtU, finalsitetensors[n], (2,), (1,))
-        elseif n > 1
-            VtU = _contract(Vts_l, Us[i], (2,3,), (1,2,))
-            finalsitetensors[n] = _contract(VtU, finalsitetensors[n], (2,), (1,))
-        end
-    end
-    if juliarank == 1
-        finalsitetensors[1] = _contract(_contract(R, Us[1], (2,3,), (1,2,)), finalsitetensors[1], (2,), (1,))
-    end
-    if juliarank == nprocs
-        finalsitetensors[end] = _contract(finalsitetensors[end], _contract(Vts[end], R, (2,3,), (1,2,)), (4,), (1,))
-    end
-
-    # All to all exchange
-    if MPI.Initialized()
-        all_sizes = [length(noderanges[r]) for r in 1:nprocs]
-        shapes = [isassigned(finalsitetensors, i) ? size(finalsitetensors[i]) : (0,0,0,0) for i in 1:length(finalsitetensors)]
-        shapesbuffer = MPI.VBuffer(shapes, all_sizes)
-        MPI.Allgatherv!(shapesbuffer, comm)
-
-        lengths = [sum(prod.(shapes)[noderanges[r]]) for r in 1:nprocs]
-        all_length = sum(prod.(shapes))
-        vec_tensors = zeros(all_length)
-
-        if juliarank == 1
-            before_me = 0
-        else
-            before_me = sum(prod.(shapes[1:noderanges[juliarank][1]-1]))
-        end
-        me = sum(prod.(shapes[noderanges[juliarank]]))
-        vec_tensors[before_me+1:before_me+me] = vcat([vec(finalsitetensors[i]) for i in 1:length(finalsitetensors) if isassigned(finalsitetensors, i)]...)
-
-        sendrecvbuf = MPI.VBuffer(vec_tensors, lengths)
-        MPI.Allgatherv!(sendrecvbuf, comm)
-
-        idx = 1
-        for i in 1:length(finalsitetensors)
-            s = shapes[i]
-            len = prod(s)
-            finalsitetensors[i] = reshape(view(vec_tensors, idx:idx+len-1), s)
-            idx += len
-        end
-    end
-    MPI.Barrier(comm)
-    
-    return TensorTrain{ValueType,4}(finalsitetensors)
+    return TCI.TensorTrain{ValueType,4}(sitetensors)
 end
 
 # If Ri = i, then R is the right environment until site i+1, which has size (size(A[i])[end], size(B[i])[end], size(X[i]])[end])
 # If Li = i, then L is the left environment until site i-1, which has size (size(A[i])[1], size(B[i])[1], size(X[i]])[1])
-function updatecore!(A::Vector{Array{T,4}}, B::Vector{Array{T,4}}, X::Vector{Array{T,4}}, i::Int;
-    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false, random_env::Bool=false,
-    R::Union{Nothing, Array{T,3}}=nothing, Ri::Int=length(A),
-    L::Union{Nothing, Array{T,3}}=nothing, Li::Int=1
-    )::Tuple{Float64, Array{T,3}, Array{T,3}} where {T}
-    L = leftenvironment(A, B, X, i-1; L, Li, random_env)
-    R = rightenvironment(A, B, X, i+2; R, Ri, random_env)
+function updatecore!(A::TCI.AbstractTensorTrain{ValueType}, B::TCI.AbstractTensorTrain{ValueType}, X::TCI.AbstractTensorTrain{ValueType}, i::Int,
+    L::Array{ValueType,3}, R::Array{ValueType,3};
+    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false
+    )::Float64 where {ValueType}
     
-    if !random_update
-        Le = _contract(_contract(L, A[i], (1,), (1,)), B[i], (1, 4), (1, 2))
-        Re = _contract(B[i+1], _contract(A[i+1], R, (4,), (1,)), (2, 4), (3, 4))
-    else
-        A_proj = random_project_right(A[i], Int(ceil(sqrt(maximum(linkdims(A))))); p=0)
-        B_proj = random_project_right(B[i], Int(ceil(sqrt(maximum(linkdims(A))))); p=0)
+    # Compute left and right effective environments
+    Le = if random_update
+        A_proj = random_project_right(A[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
+        B_proj = random_project_right(B[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
         Ai = _contract(A[i], A_proj, (4,), (1,))
         Bi = _contract(B[i], B_proj, (4,), (1,))
-
-        # A_reconstructed = _contract(Ai, A_proj', (4,), (1,))
-        # B_reconstructed = _contract(Bi, B_proj', (4,), (1,))
-
-        # println("Error proj A up: ", maximum(abs, A[i] - A_reconstructed))
-        # println("Error proj B up: ", maximum(abs, B[i] - B_reconstructed))
-
+        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+    else
+        _contract(_contract(L, A[i], (1,), (1,)), B[i], (1, 4), (1, 2))
+    end
+    
+    Re = if random_update
+        A_proj = random_project_right(A[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
+        B_proj = random_project_right(B[i], Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p=0)
         Aip1 = _contract(A_proj, A[i+1], (1,), (1,))
         Bip1 = _contract(B_proj, B[i+1], (1,), (1,))
-
-        Le = _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
-        Re = _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
+        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
+    else
+        _contract(B[i+1], _contract(A[i+1], R, (4,), (1,)), (2, 4), (3, 4))
     end
-
-
-    # time_ce = time_ns()
-    Ce = _contract(Le, Re, (3, 5), (3, 1))
-    Ce = permutedims(Ce, (1, 2, 3, 5, 4, 6))
-    # time_ce = (time_ns() - time_ce)*1e-9
-    # println("ABX random=$random_update in $time_ce at site $i, (Le=", size(Le), ", Re=", size(Re), ")")
+    
+    # Contract environments and factorize
+    Ce = _contract(Le, Re, (3, 5), (3, 1)) |>
+         C -> permutedims(C, (1, 2, 3, 5, 4, 6)) |>
+         C -> reshape(C, prod(size(C)[1:3]), prod(size(C)[4:6]))
     
     left, right, newbonddim, disc = _factorize(
-        reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6])),
-        method; tolerance, maxbonddim, leftorthogonal=(direction == :forward ? true : false)
-        )
-        
-    X[i] = reshape(left, :, size(X[i])[2:3]..., newbonddim)
-    X[i+1] = reshape(right, newbonddim, size(X[i+1])[2:3]..., :)
-    return disc, L, R
-end
-
-function updatecore!(Psia::Vector{Array{T,4}}, Va::Vector{Matrix{T}}, Psib::Vector{Array{T,4}}, Vb::Vector{Matrix{T}}, Psic::Vector{Array{T,4}}, Vc::Vector{Matrix{T}}, i::Int;
-    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false, random_env::Bool=false,
-    R::Union{Nothing, Array{T,3}}=nothing, Ri::Int=length(Psia),
-    L::Union{Nothing, Array{T,3}}=nothing, Li::Int=1
-    )::Tuple{Float64, Array{T,3}, Array{T,3}} where {T}
-
-    L = leftenvironment(Psia, Va, Psib, Vb, Psic, Vc, i-1; L, Li, random_env)
-    R = rightenvironment(Psia, Va, Psib, Vb, Psic, Vc, i+2; R, Ri, random_env)
-
-    if !random_update
-        Ai = _contract(Psia[i], Va[i], (4,), (1,))
-        Bi = _contract(Psib[i], Vb[i], (4,), (1,))
-
-        Le = _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
-        Re = _contract(Psib[i+1], _contract(Psia[i+1], R, (4,), (1,)), (2, 4), (3, 4))
-    else
-        Aip1 = _contract(Va[i], Psia[i+1], (2,), (1,))
-        Bip1 = _contract(Vb[i], Psib[i+1], (2,), (1,))
-        A_proj = random_project_right(Psia[i], Int(ceil(sqrt(maximum(linkdims(Psia))))); p=0)
-        B_proj = random_project_right(Psib[i], Int(ceil(sqrt(maximum(linkdims(Psib))))); p=0)
-
-        Ai_projected = _contract(Psia[i], A_proj, (4,), (1,))
-        Bi_projected = _contract(Psib[i], B_proj, (4,), (1,))
-        # A_reconstructed = _contract(Ai_projected, A_proj', (4,), (1,))
-        # B_reconstructed = _contract(Bi_projected, B_proj', (4,), (1,))
-
-        # println("Error proj A up: ", maximum(abs, Psia[i] - A_reconstructed))
-        # println("Error proj B up: ", maximum(abs, Psib[i] - B_reconstructed))
-
-        Aip1_projected = _contract(A_proj', Aip1, (2,), (1,))
-        Bip1_projected = _contract(B_proj', Bip1, (2,), (1,))
-
-        Le = _contract(_contract(L, Ai_projected, (1,), (1,)), Bi_projected, (1, 4), (1, 2))
-        Re = _contract(Bip1_projected, _contract(Aip1_projected, R, (4,), (1,)), (2, 4), (3, 4))
-    end
-
-    time_ce = time_ns()
-    Ce = _contract(Le, Re, (3, 5), (3, 1))
-    Ce = permutedims(Ce, (1, 2, 3, 5, 4, 6))
-    time_ce = (time_ns() - time_ce)*1e-9
-    # println("INV random=$random_update at site $i in $time_ce, (Le=", size(Le), ", Re=", size(Re), ")")
-
-    left, diamond, right, newbonddim, disc = _factorize(
-        reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6])),
-        method; tolerance, maxbonddim, diamond=true
+        Ce, method; 
+        tolerance, maxbonddim, 
+        leftorthogonal=(direction == :forward)
     )
     
-    Psic[i] = reshape(left*Diagonal(diamond), :, size(Psic[i])[2:3]..., newbonddim)
-    Psic[i+1] = reshape(Diagonal(diamond)*right, newbonddim, size(Psic[i+1])[2:3]..., :)
+    # Update cores
+    X[i] = reshape(left, :, size(X[i])[2:3]..., newbonddim)
+    X[i+1] = reshape(right, newbonddim, size(X[i+1])[2:3]..., :)
+    
+    disc
+end
+
+function updatecore!(Psia::TCI.AbstractTensorTrain{ValueType}, Va::Vector{Matrix{ValueType}}, Psib::TCI.AbstractTensorTrain{ValueType}, 
+    Vb::Vector{Matrix{ValueType}}, Psic::TCI.TensorTrain{ValueType, 4}, Vc::Vector{Matrix{ValueType}}, i::Int,
+    L::Array{ValueType,3}, R::Array{ValueType,3};
+    method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false
+    )::Float64 where {ValueType}
+    
+    # Compute left effective environment
+    Le = if random_update
+        A_proj = random_project_right(Psia[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
+        B_proj = random_project_right(Psib[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
+        Ai_projected = _contract(Psia[i], A_proj, (4,), (1,))
+        Bi_projected = _contract(Psib[i], B_proj, (4,), (1,))
+        _contract(_contract(L, Ai_projected, (1,), (1,)), Bi_projected, (1, 4), (1, 2))
+    else
+        Ai = _contract(Psia[i], Va[i], (4,), (1,))
+        Bi = _contract(Psib[i], Vb[i], (4,), (1,))
+        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+    end
+    
+    # Compute right effective environment
+    Re = if random_update
+        Aip1 = _contract(Va[i], Psia[i+1], (2,), (1,))
+        Bip1 = _contract(Vb[i], Psib[i+1], (2,), (1,))
+        A_proj = random_project_right(Psia[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psia))))); p=0)
+        B_proj = random_project_right(Psib[i], Int(ceil(sqrt(maximum(TCI.linkdims(Psib))))); p=0)
+        Aip1_projected = _contract(A_proj', Aip1, (2,), (1,))
+        Bip1_projected = _contract(B_proj', Bip1, (2,), (1,))
+        _contract(Bip1_projected, _contract(Aip1_projected, R, (4,), (1,)), (2, 4), (3, 4))
+    else
+        _contract(Psib[i+1], _contract(Psia[i+1], R, (4,), (1,)), (2, 4), (3, 4))
+    end
+    
+    # Contract environments and factorize with diamond
+    Ce = _contract(Le, Re, (3, 5), (3, 1)) |>
+         C -> permutedims(C, (1, 2, 3, 5, 4, 6)) |>
+         C -> reshape(C, prod(size(C)[1:3]), prod(size(C)[4:6]))
+    
+    left, diamond, right, newbonddim, disc = _factorize(
+         Ce, method; 
+        tolerance, maxbonddim, 
+        diamond=true
+    )
+    
+    # Update cores with singular values
+    Psic[i] = reshape(left * Diagonal(diamond), :, size(Psic[i])[2:3]..., newbonddim)
+    Psic[i+1] = reshape(Diagonal(diamond) * right, newbonddim, size(Psic[i+1])[2:3]..., :)
     Vc[i] = Diagonal(diamond.^-1)
     
-    return disc, L, R
+    disc
 end
 
 """
-    function contract_fit(A::TensorTrain{ValueType,4}, B::TensorTrain{ValueType,4})
+    function contract_fit(A::TCI.TensorTrain{ValueType,4}, B::TCI.TensorTrain{ValueType,4})
 
 Conctractos tensor trains A and B using the fit algorithm.
 
@@ -1056,18 +855,18 @@ Conctractos tensor trains A and B using the fit algorithm.
 - `method::Symbol`: Algorithm or method to use for the computation :SVD, :RSVD, :LU, :CI.
 - `maxbonddim::Int`: Maximum bond dimension allowed during the decomposition.
 """
-function contract_fit(mpoA::TensorTrain{ValueType,4},
-    mpoB::TensorTrain{ValueType,4};
+function contract_fit(mpoA::TCI.TensorTrain{ValueType,4},
+    mpoB::TCI.TensorTrain{ValueType,4};
     nsweeps::Int=2,
-    initial_guess::Union{Nothing,TensorTrain{ValueType,4}}=nothing,
-    debug::Union{Nothing,TensorTrain{ValueType,4}}=nothing,
+    initial_guess::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
+    debug::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
     tolerance::Float64=1e-12,
     method::Symbol=:SVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
     random_update::Bool=false,
     random_env::Bool=false,
     stable::Bool=true,
-    kwargs...)::TensorTrain{ValueType,4} where {ValueType}
+    kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(mpoA) != length(mpoB)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -1125,7 +924,7 @@ function contract_fit(mpoA::TensorTrain{ValueType,4},
     # println([maximum(abs.(Rs[i])) for i in 3:n])
     
     # It doesn't matter if we repeat update in 1 or n-1, those are negligible
-    # println("Error init: $(mynorm(debug-TensorTrain{ValueType,4}(X)))")
+    # println("Error init: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
     direction = :forward
     for sweep in 1:nsweeps
         tot_disc = 0.0
@@ -1162,7 +961,7 @@ function contract_fit(mpoA::TensorTrain{ValueType,4},
                 # max_disc = max(max_disc, disc)
                 tot_disc += disc
                 tot_time_update += (time_ns() - time_update)*1e-9
-                # println("Error site $i: $(mynorm(debug-TensorTrain{ValueType,4}(X)))")
+                # println("Error site $i: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
                 # println("ABC time_site=$time_update with random=$random_env")
                 # println("Time site $i A,B,C,rupd=$random_update,renv=$random_env center: $time_center, update: $time_update")
             end
@@ -1196,7 +995,7 @@ function contract_fit(mpoA::TensorTrain{ValueType,4},
                 # max_disc = max(max_disc, disc)
                 tot_disc += disc
                 tot_time_update += (time_ns() - time_update)*1e-9
-                # println("Error site $i: $(mynorm(debug-TensorTrain{ValueType,4}(X)))")
+                # println("Error site $i: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(X)))")
                 # time_update = (time_ns() - time_update)*1e-9
                 # println("ABC time_site=$time_update with random=$random_env")
                 # println("Time site $i A,B,C,rupd=$random_update,renv=$random_env center: $time_center, update: $time_update")
@@ -1219,7 +1018,7 @@ function contract_fit(mpoA::TensorTrain{ValueType,4},
         end
     end
     # println("ENV: $tot_time_env, UP: $tot_time_update, QR: $tot_time_qr for random=$random_update")
-    return TensorTrain{ValueType,4}(X)
+    return TCI.TensorTrain{ValueType,4}(X)
 end
 
 # TODO remove this
@@ -1235,13 +1034,13 @@ function mynorm(tt)
     return sqrt(abs(res[1][1]))
 end
 
-function contract_fit(Psia::Vector{Array{ValueType,4}},
-    Va::Vector{Array{ValueType,2}},
-    Psib::Vector{Array{ValueType,4}},
-    Vb::Vector{Array{ValueType,2}};
+function contract_fit(Psia::TCI.AbstractTensorTrain{ValueType},
+    Va::TCI.AbstractTensorTrain{ValueType},
+    Psib::TCI.AbstractTensorTrain{ValueType},
+    Vb::TCI.AbstractTensorTrain{ValueType};
     nsweeps::Int=2,
-    Psi_init::Union{Nothing,Vector{Array{ValueType,4}}}=nothing,
-    V_init::Union{Nothing,Vector{Array{ValueType,2}}}=nothing,
+    Psi_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
+    V_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
     tolerance::Float64=1e-12,
     method::Symbol=:RSVD, # :SVD, :RSVD, :LU, :CI
     maxbonddim::Int=typemax(Int),
@@ -1249,7 +1048,7 @@ function contract_fit(Psia::Vector{Array{ValueType,4}},
     random_env::Bool=false,
     stable::Bool=true,
     debug=nothing,
-    kwargs...)::TensorTrain{ValueType,4} where {ValueType}
+    kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(Psia) != length(Psib)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -1363,7 +1162,7 @@ function contract_fit(Psia::Vector{Array{ValueType,4}},
                 # println("At step $i direction $direction")
                 # tmp = [_contract(Psic[i], Vc[i], (4,), (1,)) for i in 1:n-1]
                 # push!(tmp, Psic[n])
-                # println("Error: $(mynorm(debug-TensorTrain{ValueType,4}(tmp)))")
+                # println("Error: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(tmp)))")
             end
             direction = :backward
         elseif direction == :backward
@@ -1394,7 +1193,7 @@ function contract_fit(Psia::Vector{Array{ValueType,4}},
                 # println("At step $i direction $direction")
                 # tmp = [_contract(Psic[i], Vc[i], (4,), (1,)) for i in 1:n-1]
                 # push!(tmp, Psic[n])
-                # println("Error: $(mynorm(debug-TensorTrain{ValueType,4}(tmp)))")
+                # println("Error: $(mynorm(debug-TCI.TensorTrain{ValueType,4}(tmp)))")
 
             end
             direction = :forward
@@ -1432,17 +1231,17 @@ function contract_fit(Psia::Vector{Array{ValueType,4}},
     # println("Maximum X: ", [maximum(abs.(X[i])) for i in 1:n])
 
     # println("ENV: $tot_time_env, UPDATE: $tot_time_update for random=$random_update")
-    return TensorTrain{ValueType,4}(Psic)
+    return TCI.TensorTrain{ValueType,4}(Psic)
 end
 
 function contract_distr_fit(
-    Psia::Vector{Array{ValueType,4}},
-    Va::Vector{Array{ValueType,2}},
-    Psib::Vector{Array{ValueType,4}},
-    Vb::Vector{Array{ValueType,2}};
+    Psia::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
+    Va::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
+    Psib::Union{Nothing,TCI.AbstractTensorTrain{ValueType}},
+    Vb::Union{Nothing,TCI.AbstractTensorTrain{ValueType}};
     nsweeps::Int=8,
-    Psi_init::Union{Nothing,Vector{Array{ValueType,4}}}=nothing,
-    V_init::Union{Nothing,Vector{Array{ValueType,2}}}=nothing,
+    Psi_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
+    V_init::Union{Nothing,TCI.AbstractTensorTrain{ValueType}}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     noderanges::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
     tolerance::Float64=1e-12,
@@ -1454,7 +1253,7 @@ function contract_distr_fit(
     synchedoutput::Bool=true,
     stable::Bool=true,
     kwargs...
-)::TensorTrain{ValueType,4} where {ValueType}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(Psia) != length(Psib)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -1843,7 +1642,7 @@ function contract_distr_fit(
     end
 
     if !synchedoutput && juliarank > 1
-        return TensorTrain{ValueType,4}(Psia) # Anything is fine
+        return TCI.TensorTrain{ValueType,4}(Psia) # Anything is fine
     end
 
     # println("Noderanges: $noderanges")
@@ -1851,11 +1650,11 @@ function contract_distr_fit(
 
     # println("Juliarank $juliarank return Psic: $([maximum(abs.(Psic[i])) for i in 1:n])")
 
-    return TensorTrain{ValueType,4}(Psic)
+    return TCI.TensorTrain{ValueType,4}(Psic)
 end
 
 """
-    function contract_distr_fit(A::TensorTrain{ValueType,4}, B::TensorTrain{ValueType,4})
+    function contract_distr_fit(A::TCI.TensorTrain{ValueType,4}, B::TCI.TensorTrain{ValueType,4})
 
 Conctractos tensor trains A and B using the fit algorithm.
 
@@ -1871,10 +1670,10 @@ Conctractos tensor trains A and B using the fit algorithm.
 - `synchedoutput::Bool`: Whether the output MPOs must be synchronized. Use "true" if you want that all the nodes have the correct MPOs as output.
 """
 function contract_distr_fit(
-    mpoA::TensorTrain{ValueType,4},
-    mpoB::TensorTrain{ValueType,4};
+    mpoA::TCI.TensorTrain{ValueType,4},
+    mpoB::TCI.TensorTrain{ValueType,4};
     nsweeps::Int=8,
-    initial_guess::Union{Nothing,TensorTrain{ValueType,4}}=nothing,
+    initial_guess::Union{Nothing,TCI.TensorTrain{ValueType,4}}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     noderanges::Union{Nothing,Vector{UnitRange{Int}}}=nothing,
     tolerance::Float64=1e-12,
@@ -1886,7 +1685,7 @@ function contract_distr_fit(
     random_env::Bool=false,
     stable::Bool=true,
     kwargs...
-)::TensorTrain{ValueType,4} where {ValueType}
+)::TCI.TensorTrain{ValueType,4} where {ValueType}
     if length(mpoA) != length(mpoB)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -2365,20 +2164,20 @@ function contract_distr_fit(
         end
     end
 
-    return TensorTrain{ValueType,4}(X)
+    return TCI.TensorTrain{ValueType,4}(X)
 end
 
 """
     function contract(
-        A::TensorTrain{V1,4},
-        B::TensorTrain{V2,4};
+        A::TCI.TensorTrain{ValueType1,4},
+        B::TCI.TensorTrain{ValueType2,4};
         algorithm::Symbol=:TCI,
         tolerance::Float64=1e-12,
         maxbonddim::Int=typemax(Int),
         f::Union{Nothing,Function}=nothing,
         subcomm::Union{Nothing, MPI.Comm}=nothing,
         kwargs...
-    ) where {V1,V2}
+    ) where {ValueType1,ValueType2}
 
 Contract two tensor trains `A` and `B`.
 
@@ -2402,10 +2201,10 @@ Arguments:
 - `kwargs...` are forwarded to [`crossinterpolate2`](@ref) if `algorithm=:TCI` or to [`contract_fit`](@ref) if `algorithm=:fit` or `algorithm=:distrfit`.
 """
 function contract(
-    Psia::Vector{Array{V1,4}},
-    Va::Vector{Array{V1,2}},
-    Psib::Vector{Array{V2,4}},
-    Vb::Vector{Array{V2,2}};
+    Psia::TCI.AbstractTensorTrain{ValueType1},
+    Va::TCI.AbstractTensorTrain{ValueType1},
+    Psib::TCI.AbstractTensorTrain{ValueType2},
+    Vb::TCI.AbstractTensorTrain{ValueType2};
     algorithm::Symbol=:TCI,
     tolerance::Float64=1e-12,
     maxbonddim::Int=typemax(Int),
@@ -2413,8 +2212,8 @@ function contract(
     f::Union{Nothing,Function}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
-)::TensorTrain{promote_type(V1,V2), 4} where {V1,V2}
-    Vres = promote_type(V1, V2)
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2), 4} where {ValueType1,ValueType2}
+    Vres = promote_type(ValueType1, ValueType2)
     if algorithm != :fit && algorithm != :distrfit
         println("Warning! Inverse canonical form detected, but algorithm $algorithm does not support it. Converting to site canonical form.")
         for i in 1:length(Psia)-1
@@ -2423,23 +2222,23 @@ function contract(
         end
     end
     if algorithm === :TCI
-        Psia = TensorTrain{Vres,4}(Psia) # For testing reason, JET prefers it right before call.
-        Psib = TensorTrain{Vres,4}(Psib)
+        Psia = TCI.TensorTrain{Vres,4}(Psia) # For testing reason, JET prefers it right before call.
+        Psib = TCI.TensorTrain{Vres,4}(Psib)
         mpo = contract_TCI(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, f=f, kwargs...)
     elseif algorithm === :naive
         error("Naive contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TensorTrain{Vres,4}(Psia)
-        Psib = TensorTrain{Vres,4}(Psib)
+        Psia = TCI.TensorTrain{Vres,4}(Psia)
+        Psib = TCI.TensorTrain{Vres,4}(Psib)
         mpo = contract_naive(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim)
     elseif algorithm === :zipup
         error("Zipup contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TensorTrain{Vres,4}(Psia)
-        Psib = TensorTrain{Vres,4}(Psib)
+        Psia = TCI.TensorTrain{Vres,4}(Psia)
+        Psib = TCI.TensorTrain{Vres,4}(Psib)
         mpo = contract_zipup(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
     elseif algorithm === :distrzipup
         error("Zipup contraction implementation cannot be used with inverse gauge canonical form. Use algorithm=:fit instead.")
-        Psia = TensorTrain{Vres,4}(Psia)
-        Psib = TensorTrain{Vres,4}(Psib)
+        Psia = TCI.TensorTrain{Vres,4}(Psia)
+        Psib = TCI.TensorTrain{Vres,4}(Psib)
         mpo = contract_distr_zipup(Psia, Psib; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :fit
         if f !== nothing
@@ -2459,8 +2258,8 @@ end
 
 
 function contract(
-    A::TensorTrain{V1,4},
-    B::TensorTrain{V2,4};
+    A::TCI.TensorTrain{ValueType1,4},
+    B::TCI.TensorTrain{ValueType2,4};
     algorithm::Symbol=:TCI,
     tolerance::Float64=1e-12,
     maxbonddim::Int=typemax(Int),
@@ -2468,8 +2267,8 @@ function contract(
     f::Union{Nothing,Function}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
-)::TensorTrain{promote_type(V1,V2),4} where {V1,V2}
-    Vres = promote_type(V1, V2)
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
+    Vres = promote_type(ValueType1, ValueType2)
     if algorithm === :TCI
         mpo = contract_TCI(A, B; tolerance=tolerance, maxbonddim=maxbonddim, f=f, kwargs...)
     elseif algorithm === :naive
@@ -2482,11 +2281,6 @@ function contract(
             error("Zipup contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
         end
         mpo = contract_zipup(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
-    elseif algorithm === :distrzipup
-        if f !== nothing
-            error("Zipup contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-        end
-        mpo = contract_distr_zipup(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :fit
         if f !== nothing
             error("Fit contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
@@ -2503,30 +2297,30 @@ function contract(
     return mpo
 end
 
-# TODO implement this for inverse form
+# TODO implement this for other types
 function contract(
-    A::Union{TensorCI1{V},TensorCI2{V},TensorTrain{V,3}},
-    B::TensorTrain{V2,4};
+    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3}},
+    B::TCI.TensorTrain{ValueType2,4};
     kwargs...
-)::TensorTrain{promote_type(V,V2),3} where {V,V2}
-    tt = contract(TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), B; kwargs...)
-    return TensorTrain{3}(tt, prod.(sitedims(tt)))
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), B; kwargs...)
+    return TCI.TensorTrain{3}(tt, prod.(sitedims(tt)))
 end
 
 function contract(
-    A::TensorTrain{V,4},
-    B::Union{TensorCI1{V2},TensorCI2{V2},TensorTrain{V2,3}};
+    A::TCI.TensorTrain{ValueType1,4},
+    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
     kwargs...
-)::TensorTrain{promote_type(V,V2),3} where {V,V2}
-    tt = contract(A, TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
-    return TensorTrain{3}(tt, prod.(sitedims(tt)))
+)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+    tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
+    return TCI.TensorTrain{3}(tt, prod.(sitedims(tt)))
 end
 
 function contract(
-    A::Union{TensorCI1{V},TensorCI2{V},TensorTrain{V,3}},
-    B::Union{TensorCI1{V2},TensorCI2{V2},TensorTrain{V2,3}};
+    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3}},
+    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
     kwargs...
-)::promote_type(V,V2) where {V,V2}
-    tt = contract(TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
+)::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), TCI.TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
     return prod(prod.(tt.sitetensors))
 end

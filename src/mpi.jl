@@ -33,7 +33,7 @@ function finalizempi()
     end
 end
 
-function synchronize_tt!(tt::AbstractTensorTrain; subcomm = nothing, juliasource::Int = 1)
+function synchronize_tt!(tt::TCI.AbstractTensorTrain; subcomm = nothing, juliasource::Int = 1)
     if !MPI.Initialized()
         println("Warning! synchronize_tt has been called, but MPI is not initialized, please use TCI.initializempi() before contract() and use TCI.finalizempi() afterwards")
     else
