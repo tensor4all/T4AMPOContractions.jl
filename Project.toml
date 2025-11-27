@@ -1,21 +1,15 @@
 name = "T4AMPOContractions"
 uuid = "953bfbbc-cb66-4acc-a854-9589b1f489b2"
-authors = ["Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
+authors = ["Simone Foderà <simone.fodera@lmu.de>", "Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
 version = "0.9.18"
 
 [deps]
-BitIntegers = "c3b6d118-76ef-56ca-8cc7-ebb389d030a1"
-EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 
 [compat]
-BitIntegers = "0.3.5"
-EllipsisNotation = "1"
-QuadGK = "2.9"
 Random = "1.10.0"
 T4ATensorCI = "0.11"
 julia = "1.6"
@@ -25,10 +19,9 @@ MPI = "0.20.22"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
-QuanticsGrids = "634c7f73-3e90-4749-a1bd-001b8efc642d"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [targets]
-test = ["Aqua", "Test", "Random", "ITensors", "ITensorMPS", "Zygote", "Optim", "QuanticsGrids", "JET"]
+test = ["Aqua", "Test", "Random", "Zygote", "Optim", "JET"]

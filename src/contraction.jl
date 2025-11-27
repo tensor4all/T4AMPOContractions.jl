@@ -439,7 +439,7 @@ function contract_TCI(
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
-    if !all([sitedim(A, i)[2] == sitedim(B, i)[1] for i = 1:length(A)])
+    if !all([TCI.sitedim(A, i)[2] == TCI.sitedim(B, i)[1] for i = 1:length(A)])
         throw(
             ArgumentError(
                 "Cannot contract tensor trains with non-matching site dimensions.",
@@ -525,7 +525,7 @@ end
 # If Ri = i, then R is the right environment until site i+1, which has size (size(A[i])[end], size(B[i])[end], size(X[i]])[end])
 # If Li = i, then L is the left environment until site i-1, which has size (size(A[i])[1], size(B[i])[1], size(X[i]])[1])
 function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueType,4}, C::SiteTensorTrain{ValueType,4}, i::Int,
-    L::Array{ValueType,3}, R::Array{ValueType,3};
+    L::AbstractArray{ValueType}, R::AbstractArray{ValueType};
     method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
@@ -567,18 +567,16 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
     )
     
     # Update cores
-    C_i = reshape(left, :, size(C[i], 2), size(C[i], 3), newbonddim)
-    C_ip1 = reshape(right, newbonddim, size(C[i+1], 2), size(C[i+1], 3), :)
+    Ci = reshape(left, size(Ci, 1), size(Ci, 2), size(Ci, 3), newbonddim)
+    Cip1 = reshape(right, newbonddim, size(Cip1, 2), size(Cip1, 3), size(Cip1, 4))
     
     
     if direction == :forward
-        movecenterright!(A)
-        movecenterright!(B)
+        movecenterright!(A); movecenterright!(B)
     else
-        movecenterleft!(A)
-        movecenterleft!(B)
+        movecenterleft!(A); movecenterleft!(B)
     end
-    settwositetensors!(C, i, C_i, C_ip1)
+    settwositetensors!(C, i, Ci, Cip1)
     return disc
 end
 
@@ -641,7 +639,7 @@ function rightenvironment!(
 end
 
 function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{ValueType,4}, C::InverseTensorTrain{ValueType,4}, i::Int,
-    L::Array{ValueType,3}, R::Array{ValueType,3};
+    L::AbstractArray{ValueType}, R::AbstractArray{ValueType};
     method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
@@ -690,11 +688,13 @@ function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{V
     )
     
     # Update cores with singular values
-    C_i = reshape(left * Diagonal(diamond), :, size(Psic[i])[2:3]..., newbonddim)
-    C_ip1 = reshape(Diagonal(diamond) * right, newbonddim, size(Psic[i+1])[2:3]..., :)
-    Vc_i = Diagonal(diamond.^-1)
-    
-    settwositetensors!(C, i, C_i, Vc_i, C_ip1)
+    # Use sizes from current C tensors
+    Ci = TCI.sitetensor(C, i)
+    Cip1 = TCI.sitetensor(C, i+1)
+    Ci = reshape(left * Diagonal(diamond), size(Ci,1), size(Ci,2), size(Ci,3), newbonddim)
+    Cip1 = reshape(Diagonal(diamond) * right, newbonddim, size(Cip1,2), size(Cip1,3), size(Cip1,4))
+    Yci = Diagonal(diamond.^-1)
+    settwositetensors!(C, i, Ci, Yci, Cip1)
 
     return disc   
 end
@@ -735,7 +735,7 @@ function leftenvironment!(
     
     Ls[i] = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
     Ls[i] = _contract(Ls[i], Bi, (1,4,), (1,2,))
-    Ls[i] = _contract(Ls[i], conj(Psic_), (1,2,4,), (1,2,3,))
+    Ls[i] = _contract(Ls[i], conj(Ci), (1,2,4,), (1,2,3,))
 end
 
 # Compute right environment
@@ -800,7 +800,7 @@ function contract_fit(
     random_update::Bool=false,
     random_env::Bool=false,
     p::Int=0,
-    kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
+    kwargs...)::SiteTensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -877,7 +877,7 @@ function contract_fit(
     random_update::Bool=false,
     random_env::Bool=false,
     p::Int=0,
-    kwargs...)::TCI.TensorTrain{ValueType,4} where {ValueType}
+    kwargs...)::InverseTensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -941,7 +941,7 @@ function contract_distr_fit(
     synchedoutput::Bool=true,
     p::Int=0,
     kwargs...
-)::TCI.TensorTrain{ValueType,4} where {ValueType}
+)::InverseTensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
@@ -952,26 +952,7 @@ function contract_distr_fit(
         synchronize_tt!(C)
     end
 
-    n = length(A)
-
-    Psic = Vector{Array{ValueType, 4}}(undef, n)
-    Vc = Vector{Array{ValueType, 2}}(undef, n)
-    for i in 1:n
-        if !isnothing(Psi_init)
-            Psic[i] = deepcopy(Psi_init[i])
-        else
-            Psic[i] = deepcopy(Psia[i])
-        end
-    end
-    
-    for i in 1:n-1
-        if !isnothing(V_init)
-            Vc[i] = deepcopy(V_init[i])
-        else
-            Vc[i] = deepcopy(Va[i])
-        end
-    end
-    
+    n = length(A)    
 
     if MPI.Initialized()
         if subcomm != nothing
@@ -1059,12 +1040,12 @@ function contract_distr_fit(
         #Ls are left enviroments and Rs are right environments
         if first_site != 1
             Ls[first_site-1] = rand(ValueType, 
-                first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))))
+                first(size(TCI.sitetensor(A, first_site))), first(size(TCI.sitetensor(A, first_site))), first(size(TCI.sitetensor(A, first_site))))
             Ls[first_site-1] = Ls[first_site-1] ./ sqrt(sum(Ls[first_site-1].^2)) 
         end
         if last_site != n
             Rs[last_site+1] = rand(ValueType,
-                last(size(sitetensor(A, last_site))), last(size(sitetensor(A, last_site))), last(size(sitetensor(A, last_site))))
+                last(size(TCI.sitetensor(A, last_site))), last(size(TCI.sitetensor(A, last_site))), last(size(TCI.sitetensor(A, last_site))))
             Rs[last_site+1] = Rs[last_site+1] ./ sqrt(sum(Rs[last_site+1].^2))
         end
 
@@ -1082,7 +1063,8 @@ function contract_distr_fit(
         for sweep in 1:nsweeps
             tot_disc = 0.0
 
-            if sweep % 2 == juliarank % 2 # Forward
+            if sweep % 2 == juliarank % 2
+                direction = :forward
                 for i in first_site:last_site-1
                     i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
@@ -1092,6 +1074,7 @@ function contract_distr_fit(
                     tot_disc += disc
                 end
             else
+                direction = :backward
                 for i in last_site-1:-1:first_site
                     i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
@@ -1198,14 +1181,14 @@ function contract_distr_fit(
     # Redistribute the tensor train among the processes.
     if synchedoutput
         if juliarank == 1
-            received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
-            received_inversesingularvalues = Vector{Matrix}(undef, n-1)
+            received_sitetensors::Vector{Array{ValueType,4}} = Vector{Array{ValueType,4}}(undef, n)
+            received_inversesingularvalues::Vector{Matrix{ValueType}} = Vector{Matrix{ValueType}}(undef, n-1)
             for j in 2:nprocs
                 received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
                 received_inversesingularvalues[partitions[j][1]:partitions[j][end]-1] = MPI.recv(comm; source=j-1, tag=2)
             end
         else
-            send_sitetensors = sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
+            send_sitetensors = TCI.sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
             send_inversesingularvalues = inversesingularvalues(C)[partitions[juliarank][1]:partitions[juliarank][end]-1]
             MPI.send(send_sitetensors, comm; dest=0, tag=1)
             MPI.send(send_inversesingularvalues, comm; dest=0, tag=2)
@@ -1214,7 +1197,7 @@ function contract_distr_fit(
         nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
         
         if juliarank == 1
-            received_sitetensors[1:partitions[1][end]] = sitetensors(C)[1:partitions[1][end]]
+            received_sitetensors[1:partitions[1][end]] = TCI.sitetensors(C)[1:partitions[1][end]]
             received_inversesingularvalues[1:partitions[1][end]-1] = inversesingularvalues(C)[1:partitions[1][end]-1]
             for j in 2:nprocs
                 MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
@@ -1225,7 +1208,7 @@ function contract_distr_fit(
             received_inversesingularvalues = MPI.recv(comm; source=0, tag=2)
         end
 
-        return TCI.InverseTensorTrain{ValueType,4}(received_sitetensors, received_inversesingularvalues, 1:n)
+        return InverseTensorTrain{ValueType,4}(received_sitetensors, received_inversesingularvalues, 1:n)
     end
 
     return C
@@ -1262,8 +1245,8 @@ function contract_distr_fit(
     random_update::Bool=false,
     random_env::Bool=false, p::Int=0,
     kwargs...
-)::TCI.TensorTrain{ValueType,4} where {ValueType}
-    if length(mpoA) != length(mpoB)
+)::SiteTensorTrain{ValueType,4} where {ValueType}
+    if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
 
@@ -1363,26 +1346,26 @@ function contract_distr_fit(
         #Ls are left enviroments and Rs are right environments
         if first_site != 1
             Ls[first_site-1] = rand(ValueType,
-                first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))), first(size(sitetensor(A, first_site))))
+                first(size(TCI.sitetensor(A, first_site))), first(size(TCI.sitetensor(A, first_site))), first(size(TCI.sitetensor(A, first_site))))
             Ls[first_site-1] = Ls[first_site-1] ./ sqrt(sum(Ls[first_site-1].^2))
         end
         if last_site != n
             Rs[last_site+1] = rand(ValueType,
-                last(size(sitetensor(A, last_site))), last(size(sitetensor(B, last_site))), last(size(sitetensor(C, last_site))))
+                last(size(TCI.sitetensor(A, last_site))), last(size(TCI.sitetensor(B, last_site))), last(size(TCI.sitetensor(C, last_site))))
             Rs[last_site+1] = Rs[last_site+1] ./ sqrt(sum(Rs[last_site+1].^2))
         end
 
         if juliarank % 2 == 1 # Precompute right environment if going forward
             setcenter!(A, first_site)
             setcenter!(B, first_site)
-            setcenter!(X, first_site)
+            setcenter!(C, first_site)
             for i in last_site:-1:first_site+2
                 rightenvironment!(Rs, A, B, C, i; random_env, p)
             end
         else # Precompute left environment if going backward
             setcenter!(A, last_site-1)
             setcenter!(B, last_site-1)
-            setcenter!(X, last_site)
+            setcenter!(C, last_site)
             for i in first_site:last_site-2
                 leftenvironment!(Ls, A, B, C, i-1; random_env, p)
             end
@@ -1393,6 +1376,7 @@ function contract_distr_fit(
             time_update = time_ns()
 
             if sweep % 2 == juliarank % 2
+                direction = :forward
                 for i in first_site:last_site-1
 
                     i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
@@ -1403,6 +1387,7 @@ function contract_distr_fit(
                     tot_disc += disc
                 end
             else
+                direction = :backward
                 for i in last_site-1:-1:first_site
                     i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
@@ -1506,41 +1491,41 @@ function contract_distr_fit(
             if ((juliarank - 1) % (2*delta)) == 0 # I'm a receiver
             juliapartner = juliarank + delta
             
-            if juliapartner <= nprocs
-                my_first = partitions[juliarank][1]
-                my_last = partitions[juliarank][end]
-                partner_first = partitions[juliapartner][1]
-                partner_last = partitions[min(juliapartner + delta - 1, nprocs)][end]
-                
-                # Receive partner's portion of C
-                sizes = Vector{Int}(undef, partner_last - partner_first + 1)
-                for i in partner_first:partner_last
-                    sizes_i = MPI.recv(comm; source=juliapartner-1, tag=100*s + i)
+                if juliapartner <= nprocs
+                    my_first = partitions[juliarank][1]
+                    my_last = partitions[juliarank][end]
+                    partner_first = partitions[juliapartner][1]
+                    partner_last = partitions[min(juliapartner + delta - 1, nprocs)][end]
                     
-                    C_i = ones(ValueType, sizes_i[1], sizes_i[2], sizes_i[3], sizes_i[4])
-                    MPI.recv!(C_i, comm; source=juliapartner-1, tag=200*s + i)
+                    # Receive partner's portion of C
+                    sizes = Vector{Int}(undef, partner_last - partner_first + 1)
+                    for i in partner_first:partner_last
+                        sizes_i = MPI.recv(comm; source=juliapartner-1, tag=100*s + i)
+                        
+                        Ci = ones(ValueType, sizes_i[1], sizes_i[2], sizes_i[3], sizes_i[4])
+                        # TODO no recv! ?
+                        Ci = MPI.recv(comm; source=juliapartner-1, tag=200*s + i)
+                        Ci = Array{ValueType,4}(Ci) # For JET
+                        setsitetensor!(C, i, Ci)
+                    end
                     
-                    TCI.setsitetensor!(C, i, C_i)
+                    # Update partitions to include partner's range
+                    setpartition!(C, my_first:partner_last)
                 end
-                
-                # Update partitions to include partner's range
-                setpartition!(C, my_first:partner_last)
-            end
-            
             elseif ((juliarank - 1) % (2*delta)) == delta # I'm a sender
-            juliapartner = juliarank - delta
-            
-            if juliapartner >= 1
-                my_first = partitions[juliarank][1]
-                my_last = partitions[min(juliarank + delta - 1, nprocs)][end]
+                juliapartner = juliarank - delta
                 
-                # Send my portion of C to partner
-                for i in my_first:my_last
-                C_i = TCI.sitetensor(C, i)
-                MPI.send(collect(size(C_i)), comm; dest=juliapartner-1, tag=100*s + i)
-                MPI.send(C_i, comm; dest=juliapartner-1, tag=200*s + i)
+                if juliapartner >= 1
+                    my_first = partitions[juliarank][1]
+                    my_last = partitions[min(juliarank + delta - 1, nprocs)][end]
+                    
+                    # Send my portion of C to partner
+                    for i in my_first:my_last
+                        Ci = TCI.sitetensor(C, i)
+                        MPI.send(collect(size(Ci)), comm; dest=juliapartner-1, tag=100*s + i)
+                        MPI.send(Ci, comm; dest=juliapartner-1, tag=200*s + i)
+                    end
                 end
-            end
             end
             
             MPI.Barrier(comm)
@@ -1557,14 +1542,14 @@ function contract_distr_fit(
                 received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
             end
         else
-            send_sitetensors = sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
+            send_sitetensors = TCI.sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
             MPI.send(send_sitetensors, comm; dest=0, tag=1)
         end
 
         nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
         
         if juliarank == 1
-            received_sitetensors[1:partitions[1][end]] = sitetensors(C)[1:partitions[1][end]]
+            received_sitetensors[1:partitions[1][end]] = TCI.sitetensors(C)[1:partitions[1][end]]
             for j in 2:nprocs
                 MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
             end
@@ -1572,7 +1557,7 @@ function contract_distr_fit(
             received_sitetensors = MPI.recv(comm; source=0, tag=1)
         end
 
-        return TCI.SiteTensorTrain{ValueType,4}(received_sitetensors, 1:n)
+        return SiteTensorTrain{ValueType,4}(Vector{Array{ValueType,4}}(received_sitetensors), 1:n)
     end
 
     return C
@@ -1654,7 +1639,7 @@ function contract(
     f::Union{Nothing,Function}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
-)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
+)::SiteTensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
     if f !== nothing
         error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
     end
@@ -1665,8 +1650,10 @@ function contract(
         mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
         # Convert to TensorTrain for these algorithms
-        mpo = contract(TCI.TensorTrain(TCI.sitetensors(A)), TCI.TensorTrain(TCI.sitetensors(B)); 
+        SiteTensorTrain{promote_type(ValueType1,ValueType2),4}(
+            contract(TCI.TensorTrain(TCI.sitetensors(A)), TCI.TensorTrain(TCI.sitetensors(B)); 
                       algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
+        )
     else
         throw(ArgumentError("Unknown algorithm $algorithm."))
     end
@@ -1684,7 +1671,7 @@ function contract(
     f::Union{Nothing,Function}=nothing,
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
-)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
+)::InverseTensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
     if f !== nothing
         error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
     end
@@ -1695,12 +1682,12 @@ function contract(
         mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
         # Convert to TensorTrain for these algorithms
-        mpo = contract(TCI.TensorTrain(A), TCI.TensorTrain(B); # TODO, these needs to be created 
+        mpo = contract(TCI.TensorTrain(TCI.sitetensors(A)), TCI.TensorTrain(TCI.sitetensors(B)); # TODO, this is just for JET, this is wrong!
                       algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
     else
         throw(ArgumentError("Unknown algorithm $algorithm."))
     end
-    return mpo
+    return InverseTensorTrain{promote_type(ValueType1,ValueType2),4}(mpo)
 end
 
 function contract(
@@ -1708,8 +1695,8 @@ function contract(
     B::TCI.TensorTrain{ValueType2,4};
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), B; kwargs...)
-    return TCI.TensorTrain{3}(tt, prod.(sitedims(tt)))
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), B; kwargs...)
+    return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
 function contract(
@@ -1717,8 +1704,8 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
-    return TCI.TensorTrain{3}(tt, prod.(sitedims(tt)))
+    tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
+    return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
 # TODO SiteTensorTrain and TensorTrain, who wins? Right now not possible to mix
@@ -1727,8 +1714,8 @@ function contract(
     B::SiteTensorTrain{ValueType2,4};
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), B; kwargs...)
-    return SiteTensorTrain{3}(tt, prod.(sitedims(tt)))
+    tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), B; kwargs...)
+    return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
 function contract(
@@ -1736,8 +1723,8 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},SiteTensorTrain{ValueType2,3}};
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
-    return SiteTensorTrain{3}(tt, prod.(sitedims(tt)))
+    tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
+    return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
 # It's a scalar
@@ -1746,7 +1733,7 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3},SiteTensorTrain{ValueType2,3}};
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
-    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in sitedims(A)]), TCI.TensorTrain{4}(B, [(s..., 1) for s in sitedims(B)]); kwargs...)
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), TCI.TensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
     return prod(prod.(tt.sitetensors))
 end
 
@@ -1759,7 +1746,7 @@ function contract(
     # Upgrade to 4D
     A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
     B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
-    tt = TCI.TensorTrain{4}(contract(A4, B4; kwargs...)) # TODO actually create (JET will throw an error)
+    tt = contract(A4, B4; kwargs...) # TODO actually create, this is to avoid JET
     return prod(prod.(tt.sitetensors))
 end
 
@@ -1771,7 +1758,7 @@ function contract(
     # Upgrade B to 4D
     B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
     tt = contract(A, B4; kwargs...)
-    return InverseTensorTrain{3}(tt, prod.(sitedims(tt)))
+    return InverseTensorTrain{3}(tt, [prod(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)])
 end
 
 function contract(
@@ -1782,5 +1769,5 @@ function contract(
     # Upgrade A to 4D
     A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
     tt = contract(A4, B; kwargs...)
-    return InverseTensorTrain{3}(tt, prod.(sitedims(tt)))
+    return InverseTensorTrain{3}(tt, [prod(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)])
 end
