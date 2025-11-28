@@ -1,11 +1,9 @@
 using MPI
-using Test
-import T4AMPOContractions as TCI
 
 @testset "MPI" begin
     @testset "MPI init" begin
         @test !MPI.Initialized()
-        TCI.initializempi(false)
+        MPO.initializempi(false)
         @test MPI.Initialized()
     end
 
@@ -38,7 +36,7 @@ import T4AMPOContractions as TCI
 
         maxerr = 0.
         for x1 in 1:2, x2 in 1:2, x3 in 1:2, x4 in 1:2, x5 in 1:2, x6 in 1:2
-            maxerr = max(maxerr, abs(TCI.evaluate(tt0, [x1,x2,x3,x4,x5,x6]) - TCI.evaluate(tt, [x1,x2,x3,x4,x5,x6])))
+            maxerr = max(maxerr, abs(tt0([x1,x2,x3,x4,x5,x6]) - tt([x1,x2,x3,x4,x5,x6])))
         end
         if mpirank == 0
             @test maxerr < 1e-8
@@ -47,11 +45,11 @@ import T4AMPOContractions as TCI
         end
 
         juliasource = 1
-        TCI.synchronize_tt!(tt; juliasource=juliasource)
+        MPO.synchronize_tt!(tt; juliasource=juliasource)
 
         maxerr = 0.
         for x1 in 1:2, x2 in 1:2, x3 in 1:2, x4 in 1:2, x5 in 1:2, x6 in 1:2
-            maxerr = max(maxerr, abs(TCI.evaluate(tt0, [x1,x2,x3,x4,x5,x6]) - TCI.evaluate(tt, [x1,x2,x3,x4,x5,x6])))
+            maxerr = max(maxerr, abs(tt0([x1,x2,x3,x4,x5,x6]) - tt([x1,x2,x3,x4,x5,x6])))
         end
         @test maxerr < 1e-8
     end

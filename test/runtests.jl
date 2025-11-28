@@ -1,6 +1,8 @@
-import T4AMPOContractions as TCI
+import T4ATensorCI as TCI
+import T4AMPOContractions as MPO
 using Test
 using LinearAlgebra
+using Random
 
 include("test_with_aqua.jl")
 include("test_with_jet.jl")

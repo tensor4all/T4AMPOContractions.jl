@@ -5,7 +5,7 @@ mutable struct VidalTensorTrain{ValueType,N} <: TCI.AbstractTensorTrain{ValueTyp
     singularvalues::Vector{Matrix{ValueType}}
     partition::UnitRange{Int}
 
-    function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, singularvalues::AbstractVector{<:AbstractMatrix{ValueType}}, partition::AbstractRange{Integer}) where {ValueType,N}
+    function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, singularvalues::AbstractVector{<:AbstractMatrix{ValueType}}, partition::AbstractRange{<:Integer}) where {ValueType,N}
         n = length(sitetensors)
         step(partition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
         first(partition) >= 1 && last(partition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
@@ -41,20 +41,43 @@ function Base.show(io::IO, obj::VidalTensorTrain{ValueType,N}) where {ValueType,
     )
 end
 
-# In construction from sitetensors, VidalTensor needs the whole tensor, not partition
+
 function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, partition::AbstractRange{<:Integer})::VidalTensorTrain{ValueType,N} where {ValueType, N}
     # Minimal constructor: generate identity singular values consistent with adjacent bond dimensions.
     n = length(sitetensors)
     step(partition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
     first(partition) >= 1 && last(partition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
     singularvalues = Vector{Matrix{ValueType}}(undef, n-1)
-    for i in 1:n-1
-        bonddim = size(sitetensors[i], N)
-        bonddim == size(sitetensors[i+1], 1) || throw(ArgumentError("Bond dimensions between site $i and $(i+1) mismatch."))
-        singularvalues[i] = Matrix{ValueType}(I, bonddim, bonddim)
+    
+    for i in first(partition):last(partition)-1
+        Q, R = qr(reshapephysicalleft(sitetensors[i]))
+        sitetensors[i] = reshape(Matrix(Q), size(sitetensors[i])...)
+        sitetensors[i+1] = _contract(Matrix(R), sitetensors[i+1], (2,), (1,))
+    end
+    
+    for i in last(partition):-1:first(partition)+1
+        left, diamond, right, _, _ = _factorize(
+            reshapephysicalright(sitetensors[i]),
+            :SVD; tolerance=0.0, maxbonddim=first(size(sitetensors[i])), diamond=true
+            )
+            
+            singularvalues[i-1] = Diagonal(diamond)
+            
+        sitetensors[i] = reshape(right, size(sitetensors[i])...)
+        sitetensors[i-1] = _contract(sitetensors[i-1], left*singularvalues[i-1], (4,), (1,))
+    end
+
+    for i in first(partition):last(partition)-1
+        sitetensors[i] = _contract(sitetensors[i], Diagonal(diag(singularvalues[i]).^-1), (4,), (1,))
     end
     return VidalTensorTrain{ValueType,N}(sitetensors, singularvalues, partition)
 end
+
+function VidalTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType}, partition::AbstractRange{<:Integer})::VidalTensorTrain{ValueType,N} where {ValueType, N}
+    return VidalTensorTrain{ValueType, N}(TCI.sitetensors(tt), partition)
+end
+
+# TODO from Inverse to Vidal
 
 # TODO JET complains if I put a return type here
 function singularvalues(tt::VidalTensorTrain{ValueType, N}) where {ValueType, N}
@@ -69,7 +92,7 @@ function partition(tt::VidalTensorTrain{ValueType, N}) where {ValueType, N}
     return tt.partition
 end
 
-function setpartition!(tt::VidalTensorTrain{ValueType,N}, newpartition::AbstractRange{Integer}) where {ValueType,N}
+function setpartition!(tt::VidalTensorTrain{ValueType,N}, newpartition::AbstractRange{<:Integer}) where {ValueType,N}
     n = length(tt.sitetensors)
 
     step(newpartition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
@@ -98,13 +121,8 @@ function setpartition!(tt::VidalTensorTrain{ValueType,N}, newpartition::Abstract
     tt.partition = newpartition
 end
 
-
-function VidalTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType}, partition::AbstractRange{<:Integer})::VidalTensorTrain{ValueType,N} where {ValueType, N}
-    return VidalTensorTrain{ValueType,N}(TCI.sitetensors(tt), partition)
-end
-
 function VidalTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType})::VidalTensorTrain{ValueType,N} where {ValueType, N}
-    return VidalTensorTrain{ValueType, N}(TCI.sitetensors(tt), 1:length(TCI.sitetensors(tt)))
+    return VidalTensorTrain{ValueType, N}(tt, 1:length(TCI.sitetensors(tt)))
 end
 
 function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}})::VidalTensorTrain{ValueType,N} where {ValueType, N}
@@ -112,7 +130,7 @@ function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArr
 end
 
 function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, singularvalues::AbstractVector{<:AbstractMatrix{ValueType}})::VidalTensorTrain{ValueType,N} where {ValueType, N}
-    return VidalTensorTrain{ValueType,N}(sitetensors,singularvalues)
+    return VidalTensorTrain{ValueType,N}(sitetensors, singularvalues, 1:length(sitetensors))
 end
 
 function VidalTensorTrain{ValueType2,N}(tt::VidalTensorTrain{ValueType1,N})::VidalTensorTrain{ValueType2,N} where {ValueType1,ValueType2,N}
@@ -168,30 +186,26 @@ mutable struct InverseTensorTrain{ValueType,N} <: TCI.AbstractTensorTrain{ValueT
     inversesingularvalues::Vector{Matrix{ValueType}}
     partition::UnitRange{Int}
 
-    function InverseTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, inversesingularvalues::AbstractVector{<:AbstractMatrix{ValueType}}, partition::AbstractRange{Integer}) where {ValueType,N}
+    function InverseTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, inversesingularvalues::AbstractVector{<:AbstractMatrix{ValueType}}, partition::AbstractRange{<:Integer}) where {ValueType,N}
         n = length(sitetensors)
         step(partition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
         first(partition) >= 1 && last(partition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
 
         for i in first(partition):last(partition)-1
-            if (last(size(sitetensors[i])) != size(sitetensors[i+1], 1))
-                throw(ArgumentError(
-                    "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
-                ))
-            end
+            last(size(sitetensors[i])) == size(sitetensors[i+1], 1) || throw(ArgumentError(
+                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
+            ))
         end
 
         for i in first(partition):last(partition)-1
-            if !isleftorthogonal(_contract(sitetensors[i], inversesingularvalues[i], (4,), (1,)))
-                throw(ArgumentError(
-                    "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
-                ))
-            end
-            if !isrightorthogonal(_contract(inversesingularvalues[i], sitetensors[i+1], (2,), (1,)))
-                throw(ArgumentError(
-                    "Error: contracting the singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
-                ))
-            end
+            isleftorthogonal(_contract(sitetensors[i], inversesingularvalues[i], (4,), (1,))) || throw(ArgumentError(
+                "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
+            ))
+        end
+        for i in first(partition)+1:last(partition)
+            isrightorthogonal(_contract(inversesingularvalues[i-1], sitetensors[i], (2,), (1,))) || throw(ArgumentError(
+                "Error: contracting the singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
+            ))
         end
 
         new{ValueType,N}(sitetensors, inversesingularvalues, partition)
@@ -220,24 +234,25 @@ function InverseTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType},
     sitetensors = Vector{Array{ValueType, 4}}(undef, n)
     inversesingularvalues = Vector{Matrix{ValueType}}(undef, n-1)
 
-    if first(partition) == 1
-        sitetensors[1] = _contract(tt.sitetensors[first(partition)], tt.singularvalues[first(partition)], (4,), (1,))
-    end
-    for i in max(2, first(partition)):min(n-1, last(partition))
+    sitetensors[1] = _contract(tt.sitetensors[1], tt.singularvalues[1], (4,), (1,))
+    for i in 2:n-1
         sitetensors[i] = _contract(tt.singularvalues[i-1], tt.sitetensors[i], (2,), (1,))
         sitetensors[i] = _contract(sitetensors[i], tt.singularvalues[i], (4,), (1,))
     end
-    if last(partition) == n
-        sitetensors[n] = _contract(tt.singularvalues[n-1], tt.sitetensors[n], (2,), (1,))
-    end
+    sitetensors[n] = _contract(tt.singularvalues[n-1], tt.sitetensors[n], (2,), (1,))
 
-    for i in first(partition):last(partition)-1
+    for i in 1:n-1
         inversesingularvalues[i] = Diagonal(diag(tt.singularvalues[i]).^-1)
     end
     return InverseTensorTrain{ValueType,N}(sitetensors, inversesingularvalues, partition)
 end
 
-function setpartition!(tt::InverseTensorTrain{ValueType,N}, newpartition::AbstractRange{Integer}) where {ValueType,N}
+function InverseTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,4}}, partition::AbstractRange{<:Integer})::InverseTensorTrain{ValueType,N} where {ValueType, N}
+    return InverseTensorTrain{ValueType,N}(VidalTensorTrain{ValueType,N}(sitetensors), partition)
+end
+
+
+function setpartition!(tt::InverseTensorTrain{ValueType,N}, newpartition::AbstractRange{<:Integer}) where {ValueType,N}
     n = length(tt.sitetensors)
     step(newpartition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
     first(newpartition) >= 1 && last(newpartition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
@@ -247,15 +262,15 @@ function setpartition!(tt::InverseTensorTrain{ValueType,N}, newpartition::Abstra
     tt.partition = newpartition
 end
 
-function inversesingularvalues(tt::InverseTensorTrain{ValueType, N}) where {ValueType, N}
+function inversesingularvalues(tt::InverseTensorTrain{ValueType, N})::AbstractVector{<:AbstractMatrix{ValueType}} where {ValueType, N}
     return tt.inversesingularvalues
 end
 
-function inversesingularvalue(tt::InverseTensorTrain{ValueType, N}, i::Int) where {ValueType, N}
+function inversesingularvalue(tt::InverseTensorTrain{ValueType, N}, i::Int)::AbstractMatrix{ValueType} where {ValueType, N}
     return tt.inversesingularvalues[i]
 end
 
-function partition(tt::InverseTensorTrain{ValueType, N}) where {ValueType, N}
+function partition(tt::InverseTensorTrain{ValueType, N})::AbstractRange{<:Integer} where {ValueType, N}
     return tt.partition
 end
 
@@ -263,26 +278,24 @@ function settwositetensors!(tt::InverseTensorTrain{ValueType,N}, i::Int, tensor1
     tt.sitetensors[i] = tensor1
     tt.inversesingularvalues[i] = matrix
     tt.sitetensors[i+1] = tensor2
-    # TODO don't check all
-    for i in first(partition):last(partition)-1
-        if (last(size(sitetensors[i])) != size(sitetensors[i+1], 1))
-            throw(ArgumentError(
-                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
-            ))
-        end
-    end
-
-    for i in first(partition):last(partition)-1
-        if !isleftorthogonal(_contract(sitetensors[i], inversesingularvalues[i], (4,), (1,)))
-            throw(ArgumentError(
-                "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
-            ))
-        end
-        if !isrightorthogonal(_contract(inversesingularvalues[i], sitetensors[i+1], (2,), (1,)))
-            throw(ArgumentError(
+    # If sizes are wrong the orthogonality check will throw an error
+    if i >= first(partition(tt))+1 && i <= last(partition(tt))
+        isrightorthogonal(_contract(inversesingularvalue(tt, i-1), TCI.sitetensor(tt, i), (2,), (1,))) || throw(ArgumentError(
                 "Error: contracting the singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
             ))
-        end
+    end
+    if i >= first(partition(tt)) && i <= last(partition(tt))-1
+        isleftorthogonal(_contract(TCI.sitetensor(tt, i), inversesingularvalue(tt, i), (4,), (1,))) || throw(ArgumentError(
+                "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
+            ))
+        isrightorthogonal(_contract(inversesingularvalue(tt, i), TCI.sitetensor(tt, i+1), (2,), (1,))) || throw(ArgumentError(
+            "Error: contracting the singular value at $(i+1) with the tensor at $(i+2) does not lead to a right-orthogonal tensor."
+            ))
+    end
+    if i >= first(partition(tt))-1 && i <= last(partition(tt))-2
+        isleftorthogonal(_contract(TCI.sitetensor(tt, i+1), inversesingularvalue(tt, i+1), (4,), (1,))) || throw(ArgumentError(
+                "Error: contracting the tensor at $(i+1) with the singular value at $(i+1) does not lead to a left-orthogonal tensor."
+            ))
     end
 end
 
@@ -321,6 +334,33 @@ function InverseTensorTrain(sitetensors::AbstractVector{<:AbstractArray{ValueTyp
     return InverseTensorTrain{ValueType,N}(sitetensors, inversesingularvalues, partition)
 end
 
+# Lenient 4D constructor to handle vectors with abstract/Any elements (for JET and generated reshapes) #TODO ???
+function InverseTensorTrain{ValueType,4}(
+    sitetensors::AbstractVector,
+    inversesingularvalues::AbstractVector{<:AbstractMatrix{ValueType}},
+    partition::AbstractRange{<:Integer}
+) where {ValueType}
+    n = length(sitetensors)
+    n - 1 == length(inversesingularvalues) || throw(DimensionMismatch("Expected n-1 inverse singular value matrices"))
+    upgraded = Vector{Array{ValueType,4}}(undef, n)
+    for i in 1:n
+        t = sitetensors[i]
+        if t isa AbstractArray{ValueType,4}
+            upgraded[i] = Array{ValueType,4}(t)
+        elseif t isa AbstractArray{ValueType,3}
+            upgraded[i] = reshape(t, size(t,1), size(t,2), 1, size(t,3))
+        elseif t isa AbstractArray{<:Any,4}
+            upgraded[i] = Array{ValueType,4}(t)
+        elseif t isa AbstractArray{<:Any,3}
+            tV = Array{ValueType}(t)
+            upgraded[i] = reshape(tV, size(t,1), size(t,2), 1, size(t,3))
+        else
+            throw(ArgumentError("Unsupported core at site $(i) with ndims=$(ndims(t))"))
+        end
+    end
+    return InverseTensorTrain{ValueType,4}(upgraded, inversesingularvalues, partition)
+end
+
 function InverseTensorTrain{ValueType2,N}(tt::TCI.AbstractTensorTrain{ValueType1}, localdims)::InverseTensorTrain{ValueType2,N} where {ValueType1,ValueType2,N}
     for d in localdims
         length(d) == N - 2 || error("Each element of localdims be a list of N-2 integers.")
@@ -355,7 +395,7 @@ mutable struct SiteTensorTrain{ValueType,N} <: TCI.AbstractTensorTrain{ValueType
     center::Int
     partition::UnitRange{Int}
 
-    function SiteTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, center::Int, partition::AbstractRange{Integer}) where {ValueType,N}
+    function SiteTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, center::Int, partition::AbstractRange{<:Integer}) where {ValueType,N}
         n = length(sitetensors)
         step(partition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
         first(partition) >= 1 && last(partition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
@@ -428,13 +468,42 @@ function settwositetensors!(tt::SiteTensorTrain{ValueType,N}, i::Int, tensor1::A
     tt.sitetensors[i] = tensor1
     tt.sitetensors[i+1] = tensor2
 
-    # TODO don't check all
-    for i in first(tt.partition):last(tt.partition)-1
-        if (last(size(tt.sitetensors[i])) != size(tt.sitetensors[i+1], 1))
-            throw(ArgumentError(
-                "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
-            ))
+    if center(tt) == i || center(tt) == i + 1
+        if isleftorthogonal(tensor1) && !isleftorthogonal(tensor2) && !isrightorthogonal(tensor2)
+            tt.center = i + 1
+        elseif isrightorthogonal(tensor2) && !isleftorthogonal(tensor1) && !isrightorthogonal(tensor1)
+            tt.center = i
+        else
+            throw(ArgumentError("Error inserting at $i,$(i+1). [L, R]: [$(isleftorthogonal(tensor1)), $(isrightorthogonal(tensor1))], [$(isleftorthogonal(tensor2)), $(isrightorthogonal(tensor2))]"))
         end
+    end
+
+    if i < center(tt) && i in partition(tt)
+        isleftorthogonal(tensor1) || throw(ArgumentError("The tensor at $i must be left-orthogonal."))
+    elseif i > center(tt) && i in partition(tt)
+        isrightorthogonal(tensor1) || throw(ArgumentError("The tensor at $(i+1) must be right-orthogonal."))
+    end
+
+    if i+1 < center(tt) && i+1 in partition(tt)
+        isleftorthogonal(tensor2) || throw(ArgumentError("The tensor at $(i+1) must be left-orthogonal."))
+    elseif i+1 > center(tt) && i+1 in partition(tt)
+        isrightorthogonal(tensor2) || throw(ArgumentError("The tensor at $(i+1) must be right-orthogonal."))
+    end
+
+    if i >= first(partition(tt)) + 1 && i <= last(partition(tt))
+        last(size(TCI.sitetensor(tt, i-1))) == first(size(TCI.sitetensor(tt, i))) || throw(ArgumentError(
+            "The tensors at $(i-1) and $i must have consistent dimensions for a tensor train."
+        ))
+    end
+    if i >= first(partition(tt)) && i <= last(partition(tt)) - 1
+        last(size(TCI.sitetensor(tt, i))) == first(size(TCI.sitetensor(tt, i+1))) || throw(ArgumentError(
+            "The tensors at $i and $(i+1) must have consistent dimensions for a tensor train."
+        ))
+    end
+    if i >= first(partition(tt)) - 1 && i <= last(partition(tt)) - 2
+        last(size(TCI.sitetensor(tt, i+1))) == first(size(TCI.sitetensor(tt, i+2))) || throw(ArgumentError(
+            "The tensors at $(i+1) and $(i+2) must have consistent dimensions for a tensor train."
+        ))
     end
 end
 
@@ -617,31 +686,53 @@ function centercanonicalize!(sitetensors::Vector{Array{ValueType, N}}, center::I
     # RIGHT
     for i in length(sitetensors):-1:center+1
         W = sitetensors[i]
-        bonddim_left, d1, d2, bonddim_right = size(W)
-        W_mat = reshape(W, bonddim_left, d1*d2*bonddim_right)
+        dims = size(W)
+        bonddim_left = dims[1]
+        bonddim_right = dims[end]
+        W_mat = reshape(W, bonddim_left, prod(dims[2:end-1]) * bonddim_right)
 
         L, Q = lq(W_mat)
         Q = Matrix(Q)
         
-        sitetensors[i] = reshape(Q, size(Q, 1), d1, d2, bonddim_right)
+        sitetensors[i] = reshape(Q, size(Q, 1), dims[2:end-1]..., bonddim_right)
 
         tmptt = reshape(sitetensors[i-1], :, size(L, 1))
         tmptt = tmptt * Matrix(L)
-        sitetensors[i-1] = reshape(tmptt, size(sitetensors[i-1], 1), d1, d2, size(tmptt, 2))
+        sitetensors[i-1] = reshape(tmptt, size(sitetensors[i-1], 1), dims[2:end-1]..., size(tmptt, 2))
     end
 end
 
 
 function isleftorthogonal(T::AbstractArray{ValueType,N}; atol::Float64=1e-7)::Bool where {ValueType, N}
-    return isapprox(_contract(permutedims(T, (4,2,3,1,)), T, (2,3,4,),(2,3,1)), I, atol=atol)
+    return isapprox(_contract(T, T, Tuple(1:(N-1)), Tuple(1:(N-1))), I; atol)
 end
 
 function isrightorthogonal(T::AbstractArray{ValueType,N}; atol::Float64=1e-7)::Bool where {ValueType, N}
-    return isapprox(_contract(T, permutedims(T, (4,2,3,1,)), (2,3,4,),(2,3,1)), I, atol=atol)
+    return isapprox(_contract(T, T, Tuple(2:N), Tuple(2:N)), I; atol)
 end
 
-# TODO make it with check.
-
-function setsitetensor!(tt::TCI.AbstractTensorTrain{ValueType}, i::Int, tensor::AbstractArray{ValueType,N}) where {ValueType,N}
+function setsitetensor!(tt::SiteTensorTrain{ValueType,N}, i::Int, tensor::AbstractArray{ValueType,N}) where {ValueType,N}
+    if i in partition(tt) && i < center(tt)
+        if !isleftorthogonal(tensor)
+            throw(ArgumentError("The tensor at site $i must be left-orthogonal."))
+        end
+    end
+    if i in partition(tt) && i > center(tt)
+        if !isrightorthogonal(tensor)
+            throw(ArgumentError("The tensor at site $i must be right-orthogonal."))
+        end
+    end
     tt.sitetensors[i] = tensor
+end
+
+function TCI.TensorTrain{ValueType,N}(tt::InverseTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
+    n = length(tt.sitetensors)
+    sitetensors = [_contract(TCI.sitetensor(tt, i), inversesingularvalue(tt, i), (4,), (1,)) for i in 1:n-1]
+    push!(sitetensors, TCI.sitetensor(tt, n))
+    return TCI.TensorTrain{ValueType,N}(sitetensors)
+end
+
+
+function TCI.TensorTrain(tt::InverseTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
+    return TCI.TensorTrain{ValueType,N}(tt)
 end

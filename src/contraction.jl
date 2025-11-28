@@ -525,38 +525,33 @@ end
 # If Ri = i, then R is the right environment until site i+1, which has size (size(A[i])[end], size(B[i])[end], size(X[i]])[end])
 # If Li = i, then L is the left environment until site i-1, which has size (size(A[i])[1], size(B[i])[1], size(X[i]])[1])
 function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueType,4}, C::SiteTensorTrain{ValueType,4}, i::Int,
-    L::AbstractArray{ValueType}, R::AbstractArray{ValueType};
+    Ls::AbstractVector{<:AbstractArray{ValueType,3}}, Rs::AbstractVector{<:AbstractArray{ValueType,3}};
     method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), direction::Symbol=:forward, random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
     Ai = TCI.sitetensor(A, i)
     Bi = TCI.sitetensor(B, i)
+    Ci = TCI.sitetensor(C, i)
     Aip1 = TCI.sitetensor(A, i+1)
     Bip1 = TCI.sitetensor(B, i+1)
+    Cip1 = TCI.sitetensor(C, i+1)
 
     # Compute left and right effective environments
-    Le = if random_update
+    if random_update
         A_proj = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         Ai = _contract(Ai, A_proj, (4,), (1,))
         Bi = _contract(Bi, B_proj, (4,), (1,))
-        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
-    else
-        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+
+        Aip1 = _contract(A_proj', Aip1, (2,), (1,))
+        Bip1 = _contract(B_proj', Bip1, (2,), (1,))
     end
-    
-    Re = if random_update
-        A_proj = random_project_right(Aip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
-        B_proj = random_project_right(Bip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
-        Aip1 = _contract(A_proj, Aip1, (1,), (1,))
-        Bip1 = _contract(B_proj, Bip1, (1,), (1,))
-        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
-    else
-        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
-    end
+
+    Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+    Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
     
     # Contract environments and factorize
-    Ce = _contract(Le, Re, (3, 5), (3, 1)) |>
+    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1)) |>
          Ce -> permutedims(Ce, (1, 2, 3, 5, 4, 6)) |>
          Ce -> reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6]))
     
@@ -565,6 +560,9 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
         tolerance, maxbonddim, 
         leftorthogonal=(direction == :forward)
     )
+
+    println("Is left leftorthogonal? $(isapprox(left' * left, I, atol=1e-7))")
+    println("Is right rightorthogonal? $(isapprox(right * right', I, atol=1e-7))")
     
     # Update cores
     Ci = reshape(left, size(Ci, 1), size(Ci, 2), size(Ci, 3), newbonddim)
@@ -576,6 +574,8 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
     else
         movecenterleft!(A); movecenterleft!(B)
     end
+    # In theory movecenter!(C) is avoidable, should not be bottleneck
+    println("Site $i: new bond dim = $newbonddim")
     settwositetensors!(C, i, Ci, Cip1)
     return disc
 end
@@ -592,21 +592,21 @@ function leftenvironment!(
     Bi = TCI.sitetensor(B, i)
     Ci = TCI.sitetensor(C, i)
 
-    if random_env
+    if random_env && i > 1
         A_proj_left = random_project_left(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj_left = random_project_left(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
         
-        L = _contract(L, A_proj_left', (1,), (1,))
-        L = _contract(L, B_proj_left', (1,), (1,))
-        L = permutedims(L, (2,3,1,))
+        Ls[i-1] = _contract(Ls[i-1], A_proj_left', (1,), (1,))
+        Ls[i-1] = _contract(Ls[i-1], B_proj_left', (1,), (1,))
+        Ls[i-1] = permutedims(Ls[i-1], (2,3,1,))
 
         Ai = _contract(A_proj_left, Ai, (2,), (1,))
         Bi = _contract(B_proj_left, Bi, (2,), (1,))
     end
 
-    Ls[i] = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
-    Ls[i] = _contract(Ls[i], Bi, (1,4,), (1,2,))
-    Ls[i] = _contract(Ls[i], conj(Ci), (1,2,4,), (1,2,3,))
+    Ltmp = _contract(Ai, get(Ls, i-1, ones(ValueType, 1, 1, 1)), (1,), (1,))
+    Ltmp = _contract(Bi, Ltmp, (1,4,), (1,2,))
+    Ls[i] = _contract(Ltmp, conj(Ci), (1,2,4,), (1,2,3,))
 end
 
 function rightenvironment!(
@@ -621,25 +621,28 @@ function rightenvironment!(
     Bi = TCI.sitetensor(B, i)
     Ci = TCI.sitetensor(C, i)
 
-    if random_env
+    if random_env && i < length(A)
         A_proj_right = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj_right = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
         
-        R = _contract(B_proj_right', Rs[i+1], (2,), (2,))
-        R = _contract(A_proj_right', R, (2,), (2,))
-        R = permutedims(R, (2,3,1,))
+        Rs[i+1] = _contract(B_proj_right', Rs[i+1], (2,), (2,))
+        Rs[i+1] = _contract(A_proj_right', Rs[i+1], (2,), (2,))
+        Rs[i+1] = permutedims(Rs[i+1], (2,3,1,))
 
         Ai = _contract(Ai, A_proj_right, (4,), (1,))
         Bi = _contract(Bi, B_proj_right, (4,), (1,))
     end
 
-    Rs[i] = _contract(conj(Ci), get(Rs, i-1, ones(ValueType, 1, 1, 1)), (4,), (3,))
-    Rs[i] = _contract(Bi, Rs[i], (3,4,), (3,5,))
-    Rs[i] = _contract(Ai, Rs[i], (2,3,4), (4,2,5,))
+    # println("Rs[$(i+1)]: $(size(get(Rs, i+1, ones(ValueType, 1, 1, 1)))). Ai: $(size(Ai)). Bi: $(size(Bi)). Ci: $(size(Ci))")
+    Rtmp = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
+    # println("Rtmp: $(size(Rtmp)). Ai: $(size(Ai)). Bi: $(size(Bi)).")
+    Rtmp = _contract(Bi, Rtmp, (3,4,), (3,5,))
+    # println("Rtmp: $(size(Rtmp)). Ai: $(size(Ai)).")
+    Rs[i] = _contract(Ai, Rtmp, (2,3,4), (4,2,5,))
 end
 
 function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{ValueType,4}, C::InverseTensorTrain{ValueType,4}, i::Int,
-    L::AbstractArray{ValueType}, R::AbstractArray{ValueType};
+    Ls::AbstractVector{<:AbstractArray{ValueType,3}}, Rs::AbstractVector{<:AbstractArray{ValueType,3}};
     method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
@@ -651,33 +654,23 @@ function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{V
     Aip1 = TCI.sitetensor(A, i+1)
     Bip1 = TCI.sitetensor(B, i+1)
 
-    Le = if random_update
+    Aip1 = _contract(Yai, Aip1, (2,), (1,))
+    Bip1 = _contract(Ybi, Bip1, (2,), (1,))
+
+    if random_update
         A_proj = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
-        Ai_projected = _contract(Ai, A_proj, (4,), (1,))
-        Bi_projected = _contract(Bi, B_proj, (4,), (1,))
-        _contract(_contract(L, Ai_projected, (1,), (1,)), Bi_projected, (1, 4), (1, 2))
-    else
-        Ai = _contract(Ai, Yai, (4,), (1,))
-        Bi = _contract(Bi, Ybi, (4,), (1,))
-        _contract(_contract(L, Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+        Ai = _contract(Ai, A_proj, (4,), (1,))
+        Bi = _contract(Bi, B_proj, (4,), (1,))
+        Aip1 = _contract(A_proj', Aip1, (2,), (1,))
+        Bip1 = _contract(B_proj', Bip1, (2,), (1,))
     end
-    
-    # Compute right effective environment
-    Re = if random_update
-        Aip1 = _contract(Yai, Aip1, (2,), (1,))
-        Bip1 = _contract(Ybi, Bip1, (2,), (1,))
-        A_proj = random_project_right(Aip1, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
-        B_proj = random_project_right(Bip1, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
-        Aip1_projected = _contract(A_proj', Aip1, (2,), (1,))
-        Bip1_projected = _contract(B_proj', Bip1, (2,), (1,))
-        _contract(Bip1_projected, _contract(Aip1_projected, R, (4,), (1,)), (2, 4), (3, 4))
-    else
-        _contract(Bip1, _contract(Aip1, R, (4,), (1,)), (2, 4), (3, 4))
-    end
+
+    Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
+    Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
     
     # Contract environments and factorize with diamond
-    Ce = _contract(Le, Re, (3, 5), (3, 1)) |>
+    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1)) |>
          C -> permutedims(C, (1, 2, 3, 5, 4, 6)) |>
          C -> reshape(C, prod(size(C)[1:3]), prod(size(C)[4:6]))
     
@@ -717,13 +710,13 @@ function leftenvironment!(
     Ybi = inversesingularvalue(B, i)
     Yci = inversesingularvalue(C, i)
 
-    if random_env
+    if random_env && i > 1
         A_proj_left = random_project_left(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj_left = random_project_left(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
         
-        Ls[i] = _contract(Ls[i], A_proj_left', (1,), (1,))
-        Ls[i] = _contract(Ls[i], B_proj_left', (1,), (1,))
-        Ls[i] = permutedims(Ls[i], (2,3,1,))
+        Ls[i-1] = _contract(Ls[i-1], A_proj_left', (1,), (1,))
+        Ls[i-1] = _contract(Ls[i-1], B_proj_left', (1,), (1,))
+        Ls[i-1] = permutedims(Ls[i-1], (2,3,1,))
 
         Ai = _contract(A_proj_left, Ai, (2,), (1,))
         Bi = _contract(B_proj_left, Bi, (2,), (1,))
@@ -733,9 +726,9 @@ function leftenvironment!(
     Bi = _contract(Bi, Ybi, (4,), (1,))
     Ci = _contract(Ci, Yci, (4,), (1,))
     
-    Ls[i] = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
-    Ls[i] = _contract(Ls[i], Bi, (1,4,), (1,2,))
-    Ls[i] = _contract(Ls[i], conj(Ci), (1,2,4,), (1,2,3,))
+    Ltmp = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
+    Ltmp = _contract(Ltmp, Bi, (1,4,), (1,2,))
+    Ls[i] = _contract(Ltmp, conj(Ci), (1,2,4,), (1,2,3,))
 end
 
 # Compute right environment
@@ -759,8 +752,8 @@ function rightenvironment!(
         A_proj_right = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj_right = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
 
-        Rs[i] = _contract(B_proj_right', Rs[i], (2,), (2,))
-        Rs[i] = _contract(A_proj_right', Rs[i], (2,), (2,))
+        Rs[i-1] = _contract(B_proj_right', Rs[i-1], (2,), (2,))
+        Rs[i-1] = _contract(A_proj_right', Rs[i-1], (2,), (2,))
 
         Ai = _contract(Ai, A_proj_right, (4,), (1,))
         Bi = _contract(Bi, B_proj_right, (4,), (1,))
@@ -770,9 +763,9 @@ function rightenvironment!(
     Bi = _contract(Ybim1, Bi, (2,), (1,))
     Ci = _contract(Ycim1, Ci, (2,), (1,))
 
-    Rs[i] = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
-    Rs[i] = _contract(Bi, Rs[i], (3,4,), (3,5,))
-    Rs[i] =  _contract(Ai, Rs[i], (2,3,4), (4,2,5,))
+    Rtmp = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
+    Rtmp = _contract(Bi, Rtmp, (3,4,), (3,5,))
+    Rs[i] =  _contract(Ai, Rtmp, (2,3,4), (4,2,5,))
 end
 
 """
@@ -806,6 +799,12 @@ function contract_fit(
     end
 
     n = length(A)
+
+    if any(size(TCI.sitetensor(A, i), 2) != size(TCI.sitetensor(B, i), 3) for i in 1:length(A))
+        C = SiteTensorTrain{ValueType,4}(
+            [ones(ValueType, 1, size(TCI.sitetensor(A, i), 2), size(TCI.sitetensor(B, i), 3), 1) for i in 1:length(A)]
+        )
+    end
     
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
@@ -814,6 +813,28 @@ function contract_fit(
     setcenter!(B, 1)
     setcenter!(C, 1)
 
+#=
+    maxbondA = maximum(TCI.linkdims(A))
+    maxbondB = maximum(TCI.linkdims(B))
+    # Maximum temporary environment size
+    tmp5D = Array{ValueType,5}(undef, 
+            maxbondA,
+            maxbondB,
+            min(maxbonddim, maxbondA*maxbondB), 
+            maximum([size(TCI.sitetensor(A, i), 2) for i in 1:length(A)]),
+            max(
+                maximum([size(TCI.sitetensor(B, i), 2) for i in 1:length(A)]),
+                maximum([size(TCI.sitetensor(B, i), 3) for i in 1:length(A)]),
+            )
+        )
+
+    tmp3D = Array{ValueType,3}(undef,
+            maxbondA,
+            maxbondB,
+            min(maxbonddim, maxbondA*maxbondB)
+        )
+
+=#
     # Precompute right environments
     for i in n:-1:3
         rightenvironment!(Rs, A, B, C, i; random_env, p)
@@ -828,7 +849,7 @@ function contract_fit(
 
                 i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, Ls, Rs;
                     method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                 tot_disc += disc
@@ -838,7 +859,7 @@ function contract_fit(
             for i in n-1:-1:1
                 i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, Ls, Rs;
                     method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                 tot_disc += disc
@@ -851,19 +872,6 @@ function contract_fit(
         end
     end
     return C
-end
-
-# TODO remove this
-function mynorm(tt)
-    res = permutedims(_contract(tt[1], conj(tt[1]), (2,3,), (2,3,)), (1,3,2,4,))
-    for i in 2:length(tt)
-        # println("Pre step $i, res is $(size(res)), tt[$i] is $(size(tt[i]))")
-        res = _contract(res, permutedims(_contract(tt[i], conj(tt[i]), (2,3,), (2,3,)), (1,3,2,4,)), (3,4,), (1,2,))
-    end
-    if res[1][1] < 0.
-        println("Error, norm^2 is $(res[1][1])")
-    end
-    return sqrt(abs(res[1][1]))
 end
 
 function contract_fit(
@@ -883,6 +891,12 @@ function contract_fit(
     end
 
     n = length(A)
+
+    if any(size(TCI.sitetensor(A, i), 2) != size(TCI.sitetensor(B, i), 3) for i in 1:length(A))
+        C = InverseTensorTrain{ValueType,4}(
+            [ones(ValueType, 1, size(TCI.sitetensor(A, i), 2), size(TCI.sitetensor(B, i), 3), 1) for i in 1:length(A)]
+        )
+    end
     
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
@@ -899,7 +913,7 @@ function contract_fit(
             for i in 1:n-1
                 i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, Ls, Rs;
                     method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
                 tot_disc += disc
@@ -909,7 +923,7 @@ function contract_fit(
             for i in n-1:-1:1
                 i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                disc = updatecore!(A, B, C, i, Ls, Rs;
                     method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
                 tot_disc += disc
@@ -945,6 +959,13 @@ function contract_distr_fit(
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
     end
+
+    if any(size(TCI.sitetensor(A, i), 2) != size(TCI.sitetensor(B, i), 3) for i in 1:length(A))
+        C = InverseTensorTrain{ValueType,4}(
+            [ones(ValueType, 1, size(TCI.sitetensor(A, i), 2), size(TCI.sitetensor(B, i), 3), 1) for i in 1:length(A)]
+        )
+    end
+    
 
     if !synchedinput
         synchronize_tt!(A)
@@ -1025,8 +1046,8 @@ function contract_distr_fit(
     setpartition!(B, partitions[juliarank])
     setpartition!(C, partitions[juliarank])
 
-    first_site = first(partitions[juliarank])
-    last_site = last(partitions[juliarank])
+    first_site::Int64 = first(partitions[juliarank])
+    last_site::Int64 = last(partitions[juliarank])
     if nprocs == 1
         println("Warning! Distributed strategy has been chosen, but only one process is running")
         return contract_fit(A, B; C, nsweeps, tolerance, method, maxbonddim, kwargs...)
@@ -1049,7 +1070,6 @@ function contract_distr_fit(
             Rs[last_site+1] = Rs[last_site+1] ./ sqrt(sum(Rs[last_site+1].^2))
         end
 
-        # TODO make so that you can either precompute all or only local environments
         if juliarank % 2 == 1 # Precompute right environment if going forward
             for i in last_site:-1:first_site+2
                 rightenvironment!(Rs, A, B, C, i; random_env, p)
@@ -1068,7 +1088,7 @@ function contract_distr_fit(
                 for i in first_site:last_site-1
                     i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    disc = updatecore!(A, B, C, i, Ls, Rs;
                         method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                     tot_disc += disc
@@ -1078,7 +1098,7 @@ function contract_distr_fit(
                 for i in last_site-1:-1:first_site
                     i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    disc = updatecore!(A, B, C, i, Ls, Rs;
                         method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                     tot_disc += disc
@@ -1103,7 +1123,7 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc = updatecore!(A, B, C, last_site, Ls[last_site-1], Rs[last_site+2];
+                        disc = updatecore!(A, B, C, last_site, Ls, Rs;
                             method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
 
                         Ci = TCI.sitetensor(C, last_site)
@@ -1140,25 +1160,13 @@ function contract_distr_fit(
                         
                         MPI.Waitall([reqs, reqr])
 
-                        sizes = Vector{Int}(undef, 4)
-                        sizes1 = Vector{Int}(undef, 2)
-                        sizes2 = Vector{Int}(undef, 4)
+                        sizes = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1))
+                        sizes1 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        sizes2 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+2)
                         
-                        reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        reqr2 = MPI.Irecv!(sizes2, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
-                        
-                        MPI.Waitall([reqr, reqr1, reqr2])
-                        
-                        Ci = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
-                        Yci = ones(ValueType, sizes1[1], sizes1[2])
-                        Cip1 = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
-
-                        reqr = MPI.Irecv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(Yci, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        reqr2 = MPI.Irecv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
-
-                        MPI.Waitall([reqr, reqr1, reqr2])
+                        Ci = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1))
+                        Yci = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        Cip1 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+2)
 
                         settwositetensors!(C, first_site-1, Ci, Yci, Cip1)
 
@@ -1248,6 +1256,12 @@ function contract_distr_fit(
 )::SiteTensorTrain{ValueType,4} where {ValueType}
     if length(A) != length(B)
         throw(ArgumentError("Cannot contract tensor trains with different length."))
+    end
+
+    if any(size(TCI.sitetensor(A, i), 2) != size(TCI.sitetensor(B, i), 3) for i in 1:length(A))
+        C = SiteTensorTrain{ValueType,4}(
+            [ones(ValueType, 1, size(TCI.sitetensor(A, i), 2), size(TCI.sitetensor(B, i), 3), 1) for i in 1:length(A)]
+        )
     end
 
     # println("La tolerance usata e': $tolerance")
@@ -1381,7 +1395,7 @@ function contract_distr_fit(
 
                     i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
-                    disc = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    disc = updatecore!(A, B, C, i, Ls, Rs;
                         method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                     tot_disc += disc
@@ -1391,7 +1405,7 @@ function contract_distr_fit(
                 for i in last_site-1:-1:first_site
                     i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
-                    disc, _, _ = updatecore!(A, B, C, i, get(Ls, i-1, ones(ValueType, 1, 1, 1)), get(Rs, i+2, ones(ValueType, 1, 1, 1));
+                    disc = updatecore!(A, B, C, i, Ls, Rs;
                         method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
 
                     tot_disc += disc
@@ -1416,7 +1430,7 @@ function contract_distr_fit(
                         reqr = MPI.Irecv!(Rs[last_site+2], comm; source=mpirank+1, tag=juliarank+1)
 
                         MPI.Waitall([reqs, reqr])
-                        disc = updatecore!(A, B, C, last_site, Ls[last_site-1], Rs[last_site+2];
+                        disc = updatecore!(A, B, C, last_site, Ls, Rs;
                             method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
 
                         Ci = TCI.sitetensor(C, last_site)
@@ -1468,7 +1482,7 @@ function contract_distr_fit(
 
                         settwositetensors!(C, first_site-1, Ci, Cip1)
 
-                        Ls[first_site-1] = leftenvironment(Ls, A, B, C, first_site-1; random_env, p)
+                        leftenvironment!(Ls, A, B, C, first_site-1; random_env, p)
                     end
                 end
             end
@@ -1682,7 +1696,7 @@ function contract(
         mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
         # Convert to TensorTrain for these algorithms
-        mpo = contract(TCI.TensorTrain(TCI.sitetensors(A)), TCI.TensorTrain(TCI.sitetensors(B)); # TODO, this is just for JET, this is wrong!
+        mpo = contract(TCI.TensorTrain(A), TCI.TensorTrain(B);
                       algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
     else
         throw(ArgumentError("Unknown algorithm $algorithm."))
@@ -1695,7 +1709,7 @@ function contract(
     B::TCI.TensorTrain{ValueType2,4};
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), B; kwargs...)
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), B; kwargs...)
     return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
@@ -1704,17 +1718,17 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
+    tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
     return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
-# TODO SiteTensorTrain and TensorTrain, who wins? Right now not possible to mix
+# TODO Need design choice if one calls contract with SiteTensorTrain and TCI.TensorTrain
 function contract(
     A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},SiteTensorTrain{ValueType1,3}},
     B::SiteTensorTrain{ValueType2,4};
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), B; kwargs...)
+    tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), B; kwargs...)
     return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
@@ -1723,7 +1737,7 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},SiteTensorTrain{ValueType2,3}};
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
-    tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
+    tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
     return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
 end
 
@@ -1733,7 +1747,7 @@ function contract(
     B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3},SiteTensorTrain{ValueType2,3}};
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
-    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in [collect(size(TCI.sitetensor(A,i))[2:3]) for i in 1:length(A)]]), TCI.TensorTrain{4}(B, [(s..., 1) for s in [collect(size(TCI.sitetensor(B,i))[2:3]) for i in 1:length(B)]]); kwargs...)
+    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), TCI.TensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
     return prod(prod.(tt.sitetensors))
 end
 
@@ -1744,10 +1758,12 @@ function contract(
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
     # Upgrade to 4D
-    A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
-    B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
-    tt = contract(A4, B4; kwargs...) # TODO actually create, this is to avoid JET
-    return prod(prod.(tt.sitetensors))
+    A4 = InverseTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)])
+    B4 = InverseTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)])
+    tt = contract(A4, B4; kwargs...)
+    to_prod = [_contract(TCI.sitetensor(tt, i), inversesingularvalue(tt,i), (4,), (1,)) for i in 1:length(tt)]
+    push!(to_prod, TCI.sitetensor(tt, length(tt)))
+    return prod(prod.(to_prod))
 end
 
 function contract(

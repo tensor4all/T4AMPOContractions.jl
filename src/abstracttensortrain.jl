@@ -1,24 +1,4 @@
 """
-    function evaluate(
-        tt::TensorTrain{V},
-        indexset::Union{AbstractVector{LocalIndex}, NTuple{N, LocalIndex}}
-    )::V where {N, V}
-
-Evaluates the tensor train `tt` at indices given by `indexset` and `jndexset`. This is ment to be used for MPOs.
-"""
-function evaluate(
-    tt::TCI.AbstractTensorTrain{V},
-    indexset::Union{AbstractVector{TCI.LocalIndex},NTuple{N,TCI.LocalIndex}},
-    jndexset::Union{AbstractVector{TCI.LocalIndex},NTuple{N,TCI.LocalIndex}}
-)::V where {N,V}
-    if length(indexset) != length(tt)
-        throw(ArgumentError("To evaluate a tt of length $(length(tt)), you have to provide $(length(tt)) indices, but there were $(length(indexset))."))
-    end
-    return only(prod(T[:, i, j, :] for (T, i, j) in zip(tt, indexset, jndexset)))
-end
-
-
-"""
     function average(tt::TensorTrain{V}) where {V}
 
 Evaluates the average of the tensor train approximation over all lattice sites in an efficient
@@ -48,7 +28,6 @@ function weightedsum(tt::TCI.AbstractTensorTrain{V}, w::Vector{Vector{V}}) where
     end
     return only(v)
 end
-
 
 function _addtttensor(
     A::Array{V}, B::Array{V};
