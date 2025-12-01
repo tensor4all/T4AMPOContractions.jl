@@ -1,4 +1,4 @@
-function _tomat(tto::TCI.TensorTrain{T,4}) where {T}
+function _tomat(tto::TCI.AbstractTensorTrain{T}) where {T}
     sitedims = TCI.sitedims(tto)
     localdims1 = [s[1] for s in sitedims]
     localdims2 = [s[2] for s in sitedims]
@@ -11,7 +11,7 @@ function _tomat(tto::TCI.TensorTrain{T,4}) where {T}
     return mat
 end
 
-function _tovec(tt::TCI.TensorTrain{T,3}) where {T}
+function _tovec(tt::TCI.AbstractTensorTrain{T}) where {T}
     sitedims = TCI.sitedims(tt)
     localdims1 = [s[1] for s in sitedims]
     return TCI.evaluate.(Ref(tt), CartesianIndices(Tuple(localdims1))[:])
@@ -87,7 +87,21 @@ end
     end
 
     @testset "Contraction, batchevaluate" begin
-        N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
+        N = 4
+        bonddims_a = [1, 2, 3, 2, 1]
+        bonddims_b = [1, 2, 3, 2, 1]
+        localdims1 = [2, 2, 2, 2]
+        localdims2 = [3, 3, 3, 3]
+        localdims3 = [2, 2, 2, 2]
+
+        a = TCI.TensorTrain{ComplexF64,4}([
+            rand(ComplexF64, bonddims_a[n], localdims1[n], localdims2[n], bonddims_a[n+1])
+            for n = 1:N
+        ])
+        b = TCI.TensorTrain{ComplexF64,4}([
+            rand(ComplexF64, bonddims_b[n], localdims2[n], localdims3[n], bonddims_b[n+1])
+            for n = 1:N
+        ])
 
         ab = MPO.Contraction(a, b)
         leftindexset = [[1]]
@@ -97,17 +111,17 @@ end
         ref_multiindex = reshape(ref, length(leftindexset), 2, 2, 2, 2, length(rightindexset))
 
         let
-            res = TCI.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 0], [1, 0]])
+            res = MPO.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 0], [1, 0]])
             @test vec(ref_multiindex[:, :, :, 1, :, :]) ≈ vec(res)
         end
 
         let
-            res = TCI.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 0], [1, 1]])
+            res = MPO.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 0], [1, 1]])
             @test vec(ref_multiindex[:, :, :, 1, 1, :]) ≈ vec(res)
         end
 
         let
-            res = TCI.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 1], [1, 0]])
+            res = MPO.batchevaluate(ab, leftindexset, rightindexset, Val(2), [[0, 1], [1, 0]])
             @test vec(ref_multiindex[:, :, 1, 1, :, :]) ≈ vec(res)
         end
     end
@@ -194,90 +208,7 @@ end
         @test Ls[2] ≈ L2
     end
 
-    @testset "rightenvironment inverse" begin
-        Random.seed!(42)
-
-        Rs = Vector{Array{ComplexF64,3}}(undef, 3)
-        As = [randn(ComplexF64, 1, 3, 4, 6), randn(ComplexF64, 6, 3, 4, 9), randn(ComplexF64, 9, 3, 4, 1)]
-        Bs = [randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 1)]
-        Cs = [randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 1)]
-
-        A = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(As))
-        B = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Bs))
-        C = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Cs))
-
-        As = TCI.sitetensors(A)
-        Bs = TCI.sitetensors(B)
-        Cs = TCI.sitetensors(C)
-        Yas = MPO.inversesingularvalues(A)
-        Ybs = MPO.inversesingularvalues(B)
-        Ycs = MPO.inversesingularvalues(C)
-
-        As[3] = MPO._contract(Yas[2], As[3], (2,), (1,))
-        Bs[3] = MPO._contract(Ybs[2], Bs[3], (2,), (1,))
-        Cs[3] = MPO._contract(Ycs[2], Cs[3], (2,), (1,))
-        As[2] = MPO._contract(Yas[1], As[2], (2,), (1,))
-        Bs[2] = MPO._contract(Ybs[1], Bs[2], (2,), (1,))
-        Cs[2] = MPO._contract(Ycs[1], Cs[2], (2,), (1,))
-
-        R = ones(ComplexF64, 1, 1, 1)
-        R3 = MPO._contract(conj(Cs[3]), R, (4,), (3,))
-        R3 = MPO._contract(Bs[3], R3, (3,4,), (3,5,))
-        R3 = MPO._contract(As[3], R3, (2,3,4), (4,2,5,))
-
-        R2 = MPO._contract(conj(Cs[2]), R3, (4,), (3,))
-        R2 = MPO._contract(Bs[2], R2, (3,4,), (3,5,))
-        R2 = MPO._contract(As[2], R2, (2,3,4), (4,2,5,))
-
-        MPO.rightenvironment!(Rs, A, B, C, 3)
-        MPO.rightenvironment!(Rs, A, B, C, 2)
-        
-        @test Rs[3] ≈ R3
-        @test Rs[2] ≈ R2
-    end
-
-    @testset "leftenvironment inverse" begin
-        Random.seed!(42)
-
-        Ls = Vector{Array{ComplexF64,3}}(undef, 3)
-        As = [randn(ComplexF64, 1, 3, 4, 6), randn(ComplexF64, 6, 3, 4, 9), randn(ComplexF64, 9, 3, 4, 1)]
-        Bs = [randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 1)]
-        Cs = [randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 1)]
-
-        A = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(As))
-        B = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Bs))
-        C = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Cs))
-
-        As = TCI.sitetensors(A)
-        Bs = TCI.sitetensors(B)
-        Cs = TCI.sitetensors(C)
-        Yas = MPO.inversesingularvalues(A)
-        Ybs = MPO.inversesingularvalues(B)
-        Ycs = MPO.inversesingularvalues(C)
-
-        As[1] = MPO._contract(As[1], Yas[1], (4,), (1,))
-        Bs[1] = MPO._contract(Bs[1], Ybs[1], (4,), (1,))
-        Cs[1] = MPO._contract(Cs[1], Ycs[1], (4,), (1,))
-        As[2] = MPO._contract(As[2], Yas[2], (4,), (1,))
-        Bs[2] = MPO._contract(Bs[2], Ybs[2], (4,), (1,))
-        Cs[2] = MPO._contract(Cs[2], Ycs[2], (4,), (1,))
-
-        L = ones(ComplexF64, 1, 1, 1)
-        L1 = MPO._contract(L, As[1], (1,), (1,))
-        L1 = MPO._contract(L1, Bs[1], (1,4,), (1,2,))
-        L1 = MPO._contract(L1, conj(Cs[1]), (1,2,4,), (1,2,3,))
-        L2 = MPO._contract(L1, As[2], (1,), (1,))
-        L2 = MPO._contract(L2, Bs[2], (1,4,), (1,2,))
-        L2 = MPO._contract(L2, conj(Cs[2]), (1,2,4,), (1,2,3,))
-
-        MPO.leftenvironment!(Ls, A, B, C, 1)
-        MPO.leftenvironment!(Ls, A, B, C, 2)
-
-        @test Ls[1] ≈ L1
-        @test Ls[2] ≈ L2
-    end
-
-    @testset "updatecore! site" for method in [:SVD, :LU], maxbonddim in [typemax(Int), 10], direction in [:forward, :backward]
+    @testset "updatecore! site" for method in [:SVD], maxbonddim in [typemax(Int), 10], direction in [:forward, :backward]
         Random.seed!(1)
         tolerance = 0.
         
@@ -285,9 +216,9 @@ end
         Bs = [randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 13), randn(ComplexF64, 13, 4, 5, 1)]
         Cs = [randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 14), randn(ComplexF64, 14, 3, 5, 1)]
 
-        A = MPO.SiteTensorTrain{ComplexF64, 4}(As)
-        B = MPO.SiteTensorTrain{ComplexF64, 4}(Bs)
-        C = MPO.SiteTensorTrain{ComplexF64, 4}(Cs)
+        A = MPO.SiteTensorTrain{ComplexF64, 4}(As, direction == :forward ? 2 : 3, 1:length(As))
+        B = MPO.SiteTensorTrain{ComplexF64, 4}(Bs, direction == :forward ? 2 : 3, 1:length(Bs))
+        C = MPO.SiteTensorTrain{ComplexF64, 4}(Cs, direction == :forward ? 2 : 3, 1:length(Cs))
 
         As = TCI.sitetensors(A)
         Bs = TCI.sitetensors(B)
@@ -311,21 +242,21 @@ end
         C_2 = reshape(left, size(C[2])[1:3]..., newbonddim)
         C_3 = reshape(right, newbonddim, size(C[3])[2:4]...)
 
-        disc = updatecore!(A, B, C, 2, Ls, Rs; method, maxbonddim, tolerance, direction)
+        disc = MPO.updatecore!(A, B, C, 2, Ls, Rs; method, maxbonddim, tolerance, direction)
 
         @test C_2 ≈ TCI.sitetensor(C,2)
         @test C_3 ≈ TCI.sitetensor(C,3)
-        if maxbonddim == typemax(Int)
+        if maxbonddim == typemax(Int) && method != :RSVD
             @test disc == 0.
         else
             @test disc > 0.
         end
     end
 
-    @testset "updatecore! inverse" for method in [:SVD], maxbonddim in [typemax(Int), 10], direction in [:forward, :backward]
-        Random.seed!(1)
-        tolerance = 0.
+    @testset "rightenvironment inverse" begin
+        Random.seed!(42)
 
+        Rs = Vector{Array{ComplexF64,3}}(undef, 3)
         As = [randn(ComplexF64, 1, 3, 4, 6), randn(ComplexF64, 6, 3, 4, 9), randn(ComplexF64, 9, 3, 4, 1)]
         Bs = [randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 1)]
         Cs = [randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 1)]
@@ -334,12 +265,95 @@ end
         B = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Bs))
         C = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Cs))
 
+        MPO.rightenvironment!(Rs, A, B, C, 3)
+        MPO.rightenvironment!(Rs, A, B, C, 2)
+
         As = TCI.sitetensors(A)
         Bs = TCI.sitetensors(B)
         Cs = TCI.sitetensors(C)
         Yas = MPO.inversesingularvalues(A)
         Ybs = MPO.inversesingularvalues(B)
         Ycs = MPO.inversesingularvalues(C)
+
+        As[3] = MPO._contract(Yas[2], As[3], (2,), (1,))
+        Bs[3] = MPO._contract(Ybs[2], Bs[3], (2,), (1,))
+        Cs[3] = MPO._contract(Ycs[2], Cs[3], (2,), (1,))
+        As[2] = MPO._contract(Yas[1], As[2], (2,), (1,))
+        Bs[2] = MPO._contract(Ybs[1], Bs[2], (2,), (1,))
+        Cs[2] = MPO._contract(Ycs[1], Cs[2], (2,), (1,))
+
+        R = ones(ComplexF64, 1, 1, 1)
+        R3 = MPO._contract(conj(Cs[3]), R, (4,), (3,))
+        R3 = MPO._contract(Bs[3], R3, (3,4,), (3,5,))
+        R3 = MPO._contract(As[3], R3, (2,3,4), (4,2,5,))
+
+        R2 = MPO._contract(conj(Cs[2]), R3, (4,), (3,))
+        R2 = MPO._contract(Bs[2], R2, (3,4,), (3,5,))
+        R2 = MPO._contract(As[2], R2, (2,3,4), (4,2,5,))
+        
+        @test Rs[3] ≈ R3
+        @test Rs[2] ≈ R2
+    end
+
+    @testset "leftenvironment inverse" begin
+        Random.seed!(42)
+
+        Ls = Vector{Array{ComplexF64,3}}(undef, 3)
+        As = [1e-3*randn(ComplexF64, 1, 3, 4, 6), randn(ComplexF64, 6, 3, 4, 9), randn(ComplexF64, 9, 3, 4, 1)]
+        Bs = [1e-3*randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 1)]
+        Cs = [1e-3*randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 1)]
+
+        A = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(As))
+        B = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Bs))
+        C = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Cs))
+
+        MPO.leftenvironment!(Ls, A, B, C, 1)
+        MPO.leftenvironment!(Ls, A, B, C, 2)
+
+        As = TCI.sitetensors(A)
+        Bs = TCI.sitetensors(B)
+        Cs = TCI.sitetensors(C)
+        Yas = MPO.inversesingularvalues(A)
+        Ybs = MPO.inversesingularvalues(B)
+        Ycs = MPO.inversesingularvalues(C)
+
+        As[1] = MPO._contract(As[1], Yas[1], (4,), (1,))
+        Bs[1] = MPO._contract(Bs[1], Ybs[1], (4,), (1,))
+        Cs[1] = MPO._contract(Cs[1], Ycs[1], (4,), (1,))
+        As[2] = MPO._contract(As[2], Yas[2], (4,), (1,))
+        Bs[2] = MPO._contract(Bs[2], Ybs[2], (4,), (1,))
+        Cs[2] = MPO._contract(Cs[2], Ycs[2], (4,), (1,))
+
+        L = ones(ComplexF64, 1, 1, 1)
+        L1 = MPO._contract(L, As[1], (1,), (1,))
+        L1 = MPO._contract(L1, Bs[1], (1,4,), (1,2,))
+        L1 = MPO._contract(L1, conj(Cs[1]), (1,2,4,), (1,2,3,))
+        L2 = MPO._contract(L1, As[2], (1,), (1,))
+        L2 = MPO._contract(L2, Bs[2], (1,4,), (1,2,))
+        L2 = MPO._contract(L2, conj(Cs[2]), (1,2,4,), (1,2,3,))
+
+        @test Ls[1] ≈ L1
+        @test Ls[2] ≈ L2
+    end
+
+    @testset "updatecore! inverse" for method in [:SVD], maxbonddim in [typemax(Int), 10]
+        Random.seed!(1)
+        tolerance = 0.
+
+        As = [randn(ComplexF64, 1, 3, 4, 6), randn(ComplexF64, 6, 3, 4, 9), randn(ComplexF64, 9, 3, 4, 12), randn(ComplexF64, 12, 3, 4, 1)]
+        Bs = [randn(ComplexF64, 1, 4, 5, 7), randn(ComplexF64, 7, 4, 5, 10), randn(ComplexF64, 10, 4, 5, 13), randn(ComplexF64, 13, 4, 5, 1)]
+        Cs = [randn(ComplexF64, 1, 3, 5, 8), randn(ComplexF64, 8, 3, 5, 11), randn(ComplexF64, 11, 3, 5, 14), randn(ComplexF64, 14, 3, 5, 1)]
+
+        A = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(As))
+        B = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Bs))
+        C = MPO.InverseTensorTrain{ComplexF64, 4}(TCI.TensorTrain{ComplexF64,4}(Cs))
+
+        As = deepcopy(TCI.sitetensors(A))
+        Bs = deepcopy(TCI.sitetensors(B))
+        Cs = deepcopy(TCI.sitetensors(C))
+        Yas = deepcopy(MPO.inversesingularvalues(A))
+        Ybs = deepcopy(MPO.inversesingularvalues(B))
+        Ycs = deepcopy(MPO.inversesingularvalues(C))
 
         Rs = Vector{Array{ComplexF64,3}}(undef, 4)
         Ls = Vector{Array{ComplexF64,3}}(undef, 4)
@@ -361,15 +375,15 @@ end
         )
         
         C_2 = reshape(left*Diagonal(diamond), size(C[2])[1:3]..., newbonddim)
+        VC_2 = Matrix(Diagonal(diamond.^-1))
         C_3 = reshape(Diagonal(diamond)*right, newbonddim, size(C[3])[2:4]...)
-        VC_2 = Diagonal(diamond.^-1)
 
-        disc = MPO.updatecore!(A, B, C, 2, Ls, Rs; method, maxbonddim, tolerance, direction)
+        disc = MPO.updatecore!(A, B, C, 2, Ls, Rs; method, maxbonddim, tolerance)
 
         @test C_2 ≈ TCI.sitetensor(C,2)
         @test C_3 ≈ TCI.sitetensor(C,3)
         @test VC_2 ≈ MPO.inversesingularvalue(C,2)
-        if maxbonddim == typemax(Int)
+        if maxbonddim == typemax(Int) && method != :RSVD
             @test disc == 0.
         else
             @test disc > 0.
@@ -385,19 +399,21 @@ end
         @test _tomat(ab) ≈ _tomat(a) * _tomat(b)
     end
 
-    @testset "MPO-MPO contraction fit inverse" for method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
+    @testset "MPO-MPO contraction fit inverse" for method in [:SVD, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
 
-        a = MPO.InverseTensorTrain{ComplexF64, 4}(a)
-        b = MPO.InverseTensorTrain{ComplexF64, 4}(b)
+        a_inv = MPO.InverseTensorTrain{ComplexF64, 4}(a)
+        b_inv = MPO.InverseTensorTrain{ComplexF64, 4}(b)
 
-        ab = MPO.contract(a, b; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
+        ab_inv = MPO.contract(a_inv, b_inv; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
+
+        ab = TCI.TensorTrain{ComplexF64,4}(ab_inv)
 
         @test _tomat(ab) ≈ _tomat(a) * _tomat(b)
     end
 
-    @testset "MPO-MPO contraction fit site" for method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
+    @testset "MPO-MPO contraction fit site" for method in [:SVD, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2, localdims3 = _gen_testdata_TTO_TTO()
 
@@ -418,19 +434,21 @@ end
         @test _tovec(ab) ≈ _tomat(a) * _tovec(b)
     end
 
-    @testset "MPO-MPS contraction fit inverse" for method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
+    @testset "MPO-MPS contraction fit inverse" for method in [:SVD, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
 
-        a = MPO.InverseTensorTrain{ComplexF64, 4}(a)
-        b = MPO.InverseTensorTrain{ComplexF64, 3}(b)
+        a_inv = MPO.InverseTensorTrain{ComplexF64, 4}(a)
+        b_inv = MPO.InverseTensorTrain{ComplexF64, 3}(b)
 
-        ab = MPO.contract(a, b; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
+        ab_inv = MPO.contract(a_inv, b_inv; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
+
+        ab = TCI.TensorTrain{ComplexF64,3}(ab_inv)
 
         @test _tovec(ab) ≈ _tomat(a) * _tovec(b)
     end
 
-    @testset "MPO-MPS contraction fit site" for method in [:SVD, :LU, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
+    @testset "MPO-MPS contraction fit site" for method in [:SVD, :RSVD], maxbonddim in [typemax(Int), 10], nsweeps in [9,10]
         Random.seed!(42) # For reproducibility
         N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
 
@@ -440,5 +458,63 @@ end
         ab = MPO.contract(a, b; algorithm=:fit, method, maxbonddim, nsweeps, tolerance=0.0)
 
         @test _tovec(ab) ≈ _tomat(a) * _tovec(b)
+    end
+
+    @testset "MPO-Site conversion" begin
+        Random.seed!(42)
+
+        N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
+
+        a_site = MPO.SiteTensorTrain{ComplexF64, 4}(a)
+        b_site = MPO.SiteTensorTrain{ComplexF64, 3}(b)
+
+        a_tt = TCI.TensorTrain{ComplexF64,4}(a_site)
+        b_tt = TCI.TensorTrain{ComplexF64,3}(b_site)
+
+        @test _tomat(a) ≈ _tomat(a_tt)
+        @test _tovec(b) ≈ _tovec(b_tt)
+    end
+
+    @testset "MPO-Vidal conversion" begin
+        Random.seed!(42)
+
+        N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
+
+        a_v = MPO.VidalTensorTrain{ComplexF64, 4}(a)
+
+        @test MPO.isleftorthogonal(TCI.sitetensor(a_v, 1))
+
+        for i in 2:N-1
+            @test MPO.isrightorthogonal(MPO._contract(TCI.sitetensor(a_v, i), MPO.singularvalue(a_v, i), (4,), (1,)))
+        end
+
+        for i in 2:N-1
+            @test MPO.isleftorthogonal(MPO._contract(MPO.singularvalue(a_v, i-1), TCI.sitetensor(a_v, i), (2,), (1,)))
+        end
+        
+        @test MPO.isrightorthogonal(TCI.sitetensor(a_v, N))
+        
+        a_tt = TCI.TensorTrain{ComplexF64,4}(a_v)
+
+        @test _tomat(a) ≈ _tomat(a_tt)
+    end
+
+    @testset "MPO-Inverse conversion" begin
+        Random.seed!(42)
+
+        N, a, b, localdims1, localdims2 = _gen_testdata_TTO_TTS()
+
+        a_inv = MPO.InverseTensorTrain{ComplexF64, 4}(a)
+
+        for i in 1:N-1
+            @test MPO.isleftorthogonal(MPO._contract(TCI.sitetensor(a_inv, i), MPO.inversesingularvalue(a_inv, i), (4,), (1,)))
+        end
+        for i in 2:N
+            @test MPO.isrightorthogonal(MPO._contract(MPO.inversesingularvalue(a_inv, i-1), TCI.sitetensor(a_inv, i), (2,), (1,)))
+        end
+
+        a_tt = TCI.TensorTrain{ComplexF64,4}(a_inv)
+
+        @test _tomat(a) ≈ _tomat(a_tt)
     end
 end

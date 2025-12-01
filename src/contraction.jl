@@ -171,8 +171,6 @@ function evaluateleft(
     return obj.leftcache[key]
 end
 
-
-
 # Compute right environment
 function evaluateright(
     obj::Contraction{ValueType},
@@ -547,13 +545,17 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
         Bip1 = _contract(B_proj', Bip1, (2,), (1,))
     end
 
+    # println("Update at $i: Ls[$(i-1)]: $(size(get(Ls, i-1, ones(ValueType, 1, 1, 1)))).")
+    # println("Update at $i: Ai: $(size(Ai)).")
+    # println("Update at $i: Bi: $(size(Bi)).")
+    # println("Update at $i: Ci: $(size(Ci))")
     Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
     
     # Contract environments and factorize
-    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1)) |>
-         Ce -> permutedims(Ce, (1, 2, 3, 5, 4, 6)) |>
-         Ce -> reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6]))
+    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1))
+    Ce = permutedims(Ce, (1, 2, 3, 5, 4, 6))
+    Ce = reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6]))
     
     left, right, newbonddim, disc = _factorize(
         Ce, method; 
@@ -561,22 +563,21 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
         leftorthogonal=(direction == :forward)
     )
 
-    println("Is left leftorthogonal? $(isapprox(left' * left, I, atol=1e-7))")
-    println("Is right rightorthogonal? $(isapprox(right * right', I, atol=1e-7))")
-    
+    # println("Going $(direction) at site $i with $method: left?=$(isapprox(left' * left, I, atol=1e-7)), right?=$(isapprox(right * right', I, atol=1e-7))")
     # Update cores
     Ci = reshape(left, size(Ci, 1), size(Ci, 2), size(Ci, 3), newbonddim)
     Cip1 = reshape(right, newbonddim, size(Cip1, 2), size(Cip1, 3), size(Cip1, 4))
-    
-    
+
+    # println("Premosse update $i: A center: $(center(A)), B center: $(center(B)), C center: $(center(C))")
+
     if direction == :forward
         movecenterright!(A); movecenterright!(B)
     else
         movecenterleft!(A); movecenterleft!(B)
     end
-    # In theory movecenter!(C) is avoidable, should not be bottleneck
-    println("Site $i: new bond dim = $newbonddim")
+
     settwositetensors!(C, i, Ci, Cip1)
+    # println("Postmose update $i: A center: $(center(A)), B center: $(center(B)), C center: $(center(C))")
     return disc
 end
 
@@ -604,8 +605,9 @@ function leftenvironment!(
         Bi = _contract(B_proj_left, Bi, (2,), (1,))
     end
 
-    Ltmp = _contract(Ai, get(Ls, i-1, ones(ValueType, 1, 1, 1)), (1,), (1,))
-    Ltmp = _contract(Bi, Ltmp, (1,4,), (1,2,))
+    # println("Ls[$(i-1)]: $(size(get(Ls, i-1, ones(ValueType, 1, 1, 1)))). Ai: $(size(Ai)). Bi: $(size(Bi)). Ci: $(size(Ci))")
+    Ltmp = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
+    Ltmp = _contract(Ltmp, Bi, (1,4,), (1,2,))
     Ls[i] = _contract(Ltmp, conj(Ci), (1,2,4,), (1,2,3,))
 end
 
@@ -646,17 +648,17 @@ function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{V
     method::Symbol=:SVD, tolerance::Float64=1e-8, maxbonddim::Int=typemax(Int), random_update::Bool=false, p::Int=0
     )::Float64 where {ValueType}
     
-    # Compute left effective environment
-    Ai = TCI.sitetensor(A, i)
-    Bi = TCI.sitetensor(B, i)
+    Ai = deepcopy(TCI.sitetensor(A, i))
+    Bi = deepcopy(TCI.sitetensor(B, i))
+    Ci = deepcopy(TCI.sitetensor(C, i))
     Yai = inversesingularvalue(A, i)
     Ybi = inversesingularvalue(B, i)
-    Aip1 = TCI.sitetensor(A, i+1)
-    Bip1 = TCI.sitetensor(B, i+1)
+    Aip1 = deepcopy(TCI.sitetensor(A, i+1))
+    Bip1 = deepcopy(TCI.sitetensor(B, i+1))
+    Cip1 = deepcopy(TCI.sitetensor(C, i+1))
+    
 
-    Aip1 = _contract(Yai, Aip1, (2,), (1,))
-    Bip1 = _contract(Ybi, Bip1, (2,), (1,))
-
+    # TODO check this random
     if random_update
         A_proj = random_project_right(Ai, Int(ceil(sqrt(maximum(TCI.linkdims(A))))); p)
         B_proj = random_project_right(Bi, Int(ceil(sqrt(maximum(TCI.linkdims(B))))); p)
@@ -666,30 +668,32 @@ function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{V
         Bip1 = _contract(B_proj', Bip1, (2,), (1,))
     end
 
+    Ai = _contract(Ai, Yai, (4,), (1,))
+    Bi = _contract(Bi, Ybi, (4,), (1,))
+
     Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
     
     # Contract environments and factorize with diamond
-    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1)) |>
-         C -> permutedims(C, (1, 2, 3, 5, 4, 6)) |>
-         C -> reshape(C, prod(size(C)[1:3]), prod(size(C)[4:6]))
+    Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1))
+    Ce = permutedims(Ce, (1, 2, 3, 5, 4, 6))
+    Ce = reshape(Ce, prod(size(Ce)[1:3]), prod(size(Ce)[4:6]))
     
     left, diamond, right, newbonddim, disc = _factorize(
-         Ce, method; 
+        Ce, method; 
         tolerance, maxbonddim, 
         diamond=true
     )
     
     # Update cores with singular values
     # Use sizes from current C tensors
-    Ci = TCI.sitetensor(C, i)
-    Cip1 = TCI.sitetensor(C, i+1)
     Ci = reshape(left * Diagonal(diamond), size(Ci,1), size(Ci,2), size(Ci,3), newbonddim)
+    Yci = Matrix(Diagonal(diamond.^-1))
     Cip1 = reshape(Diagonal(diamond) * right, newbonddim, size(Cip1,2), size(Cip1,3), size(Cip1,4))
-    Yci = Diagonal(diamond.^-1)
+    
     settwositetensors!(C, i, Ci, Yci, Cip1)
 
-    return disc   
+    return disc
 end
 
 
@@ -703,9 +707,9 @@ function leftenvironment!(
     random_env::Bool = false, p::Int=0
     )::Array{ValueType, 3} where {ValueType}
 
-    Ai = TCI.sitetensor(A, i)
-    Bi = TCI.sitetensor(B, i)
-    Ci = TCI.sitetensor(C, i)
+    Ai = deepcopy(TCI.sitetensor(A, i))
+    Bi = deepcopy(TCI.sitetensor(B, i))
+    Ci = deepcopy(TCI.sitetensor(C, i))
     Yai = inversesingularvalue(A, i)
     Ybi = inversesingularvalue(B, i)
     Yci = inversesingularvalue(C, i)
@@ -741,9 +745,9 @@ function rightenvironment!(
     random_env::Bool = false, p::Int=0
     )::Array{ValueType, 3} where {ValueType}
 
-    Ai = TCI.sitetensor(A, i)
-    Bi = TCI.sitetensor(B, i)
-    Ci = TCI.sitetensor(C, i)
+    Ai = deepcopy(TCI.sitetensor(A, i))
+    Bi = deepcopy(TCI.sitetensor(B, i))
+    Ci = deepcopy(TCI.sitetensor(C, i))
     Yaim1 = inversesingularvalue(A, i-1)
     Ybim1 = inversesingularvalue(B, i-1)
     Ycim1 = inversesingularvalue(C, i-1)
@@ -846,11 +850,10 @@ function contract_fit(
         tot_disc = 0.0
         if direction == :forward
             for i in 1:n-1
-
                 i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
                 disc = updatecore!(A, B, C, i, Ls, Rs;
-                    method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                    method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, p)
 
                 tot_disc += disc
             end
@@ -860,7 +863,7 @@ function contract_fit(
                 i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
                 disc = updatecore!(A, B, C, i, Ls, Rs;
-                    method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                    method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, p)
 
                 tot_disc += disc
             end
@@ -1694,13 +1697,14 @@ function contract(
         mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
     elseif algorithm === :distrfit
         mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
-    elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
-        # Convert to TensorTrain for these algorithms
-        mpo = contract(TCI.TensorTrain(A), TCI.TensorTrain(B);
-                      algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
+#    elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
+#        # Convert to TensorTrain for these algorithms
+#        mpo = contract(TCI.TensorTrain(A), TCI.TensorTrain(B);
+#                      algorithm=algorithm, tolerance=tolerance, maxbonddim=maxbonddim, method=method, f=f, kwargs...)
     else
         throw(ArgumentError("Unknown algorithm $algorithm."))
     end
+    return mpo
     return InverseTensorTrain{promote_type(ValueType1,ValueType2),4}(mpo)
 end
 
@@ -1710,7 +1714,7 @@ function contract(
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), B; kwargs...)
-    return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
+    return TCI.TensorTrain{3}(tt, prod.(TCI.sitedims(tt)))
 end
 
 function contract(
@@ -1719,7 +1723,7 @@ function contract(
     kwargs...
 )::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     tt = contract(A, TCI.TensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
-    return TCI.TensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
+    return TCI.TensorTrain{3}(tt, prod.(TCI.sitedims(tt)))
 end
 
 # TODO Need design choice if one calls contract with SiteTensorTrain and TCI.TensorTrain
@@ -1729,7 +1733,7 @@ function contract(
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     tt = contract(SiteTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), B; kwargs...)
-    return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
+    return SiteTensorTrain{3}(tt, prod.(TCI.sitedims(tt)))
 end
 
 function contract(
@@ -1738,16 +1742,31 @@ function contract(
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     tt = contract(A, SiteTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
-    return SiteTensorTrain{3}(tt, prod.([collect(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)]))
+    return SiteTensorTrain{3}(tt, prod.(TCI.sitedims(tt)))
 end
 
 # It's a scalar
 function contract(
-    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3},SiteTensorTrain{ValueType1,3}},
-    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3},SiteTensorTrain{ValueType2,3}};
+    A::Union{TCI.TensorCI1{ValueType1},TCI.TensorCI2{ValueType1},TCI.TensorTrain{ValueType1,3}},
+    B::Union{TCI.TensorCI1{ValueType2},TCI.TensorCI2{ValueType2},TCI.TensorTrain{ValueType2,3}};
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
-    tt = contract(TCI.TensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]), TCI.TensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]); kwargs...)
+    tt = contract(
+        TCI.TensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]),
+        TCI.TensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]);
+        kwargs...)
+    return prod(prod.(tt.sitetensors))
+end
+
+function contract(
+    A::SiteTensorTrain{ValueType1,3},
+    B::SiteTensorTrain{ValueType2,3};
+    kwargs...
+)::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
+    tt = contract(
+        SiteTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]),
+        SiteTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]);
+        kwargs...)
     return prod(prod.(tt.sitetensors))
 end
 
@@ -1757,22 +1776,21 @@ function contract(
     B::InverseTensorTrain{ValueType2,3};
     kwargs...
 )::promote_type(ValueType1,ValueType2) where {ValueType1,ValueType2}
-    # Upgrade to 4D
-    A4 = InverseTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)])
-    B4 = InverseTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)])
-    tt = contract(A4, B4; kwargs...)
-    to_prod = [_contract(TCI.sitetensor(tt, i), inversesingularvalue(tt,i), (4,), (1,)) for i in 1:length(tt)]
-    push!(to_prod, TCI.sitetensor(tt, length(tt)))
-    return prod(prod.(to_prod))
+    tt = contract(
+        InverseTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)]),
+        InverseTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)]);
+        kwargs...
+    )
+    return prod(prod.(tt.sitetensors))
 end
 
 function contract(
     A::InverseTensorTrain{ValueType1,4},
     B::InverseTensorTrain{ValueType2,3};
     kwargs...
-)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+)::InverseTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     # Upgrade B to 4D
-    B4 = InverseTensorTrain{ValueType2,4}([reshape(t, size(t)..., 1) for t in TCI.sitetensors(B)], inversesingularvalues(B), partition(B))
+    B4 = InverseTensorTrain{4}(B, [(s..., 1) for s in TCI.sitedims(B)])
     tt = contract(A, B4; kwargs...)
     return InverseTensorTrain{3}(tt, [prod(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)])
 end
@@ -1781,9 +1799,11 @@ function contract(
     A::InverseTensorTrain{ValueType1,3},
     B::InverseTensorTrain{ValueType2,4};
     kwargs...
-)::TCI.TensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
+)::InverseTensorTrain{promote_type(ValueType1,ValueType2),3} where {ValueType1,ValueType2}
     # Upgrade A to 4D
-    A4 = InverseTensorTrain{ValueType1,4}([reshape(t, 1, size(t)...) for t in TCI.sitetensors(A)], inversesingularvalues(A), partition(A))
+    A4 = InverseTensorTrain{4}(A, [(1, s...) for s in TCI.sitedims(A)])
     tt = contract(A4, B; kwargs...)
     return InverseTensorTrain{3}(tt, [prod(size(TCI.sitetensor(tt,i))[2:3]) for i in 1:length(tt)])
 end
+
+# TODO if I want... TCI and InvTT{N}

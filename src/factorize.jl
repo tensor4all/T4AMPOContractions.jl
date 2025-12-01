@@ -133,8 +133,8 @@ function _factorize(
             if leftorthogonal
                 if invert
                     return (
-                        Matrix(factorization.Vt[1:trunci, :]' * Diagonal(factorization.S[1:trunci])),
-                        Matrix(factorization.U[:, 1:trunci]'),
+                        Matrix(factorization.Vt[1:trunci, :]'),
+                        Diagonal(factorization.S[1:trunci])*Matrix(factorization.U[:, 1:trunci]'),
                         trunci, disc
                     )
                 else
