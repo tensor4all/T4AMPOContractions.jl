@@ -6,14 +6,16 @@ version = "0.9.18"
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 
 [compat]
+MPI = "0.20.22"
+MPIPreferences = "0.1.11"
 Random = "1.10.0"
 T4ATensorCI = "0.11"
 julia = "1.6"
-MPI = "0.20.22"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"

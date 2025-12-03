@@ -44,12 +44,15 @@ end
 
 function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArray{ValueType,N}}, partition::AbstractRange{<:Integer})::VidalTensorTrain{ValueType,N} where {ValueType, N}
     # Minimal constructor: generate identity singular values consistent with adjacent bond dimensions.
+    # println("Constructing Vidal Tensor Train from site tensors")
     n = length(sitetensors)
     step(partition) == 1 || throw(ArgumentError("partition must be a contiguous range (step 1)"))
     first(partition) >= 1 && last(partition) <= n || throw(ArgumentError("All partition indices must be between 1 and $n"))
     
     sitetensors = deepcopy(sitetensors)
     singularvalues = Vector{Matrix{Float64}}(undef, n-1)
+
+    # println("Pre: sitetensors min-max: $([minimum(sitetensors[i]) for i in 1:n]), $([maximum(sitetensors[i]) for i in 1:n])")
     
     for i in first(partition):last(partition)-1
         Q, R = qr(reshapephysicalleft(sitetensors[i]))
@@ -57,6 +60,8 @@ function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArr
         sitetensors[i+1] = _contract(Matrix(R), sitetensors[i+1], (2,), (1,))
     end
     
+    # println("After QR: sitetensors min-max: $([minimum(sitetensors[i]) for i in 1:n]), $([maximum(sitetensors[i]) for i in 1:n])")
+
     for i in last(partition):-1:first(partition)+1
         left, diamond, right, _, _ = _factorize(
             reshapephysicalright(sitetensors[i]),
@@ -69,10 +74,16 @@ function VidalTensorTrain{ValueType,N}(sitetensors::AbstractVector{<:AbstractArr
         sitetensors[i-1] = _contract(sitetensors[i-1], left*singularvalues[i-1], (N,), (1,))
     end
 
+    # println("After SVD: sitetensors min-max: $([minimum(sitetensors[i]) for i in 1:n]), $([maximum(sitetensors[i]) for i in 1:n])")
+    # println("After SVD: inverse singular values min-max: $([minimum(diag(singularvalues[i])) for i in first(partition):last(partition)-1]), $([maximum(diag(singularvalues[i])) for i in first(partition):last(partition)-1])")
+
     for i in first(partition):last(partition)-1
         d = diag(singularvalues[i])
         sitetensors[i] = _contract(sitetensors[i], Diagonal(1.0 ./ d), (N,), (1,))
     end
+
+    # println("Post: sitetensors min-max: $([minimum(sitetensors[i]) for i in 1:n]), $([maximum(sitetensors[i]) for i in 1:n])")
+    # println("Post: singular values min-max: $([minimum(diag(singularvalues[i])) for i in first(partition):last(partition)-1]), $([maximum(diag(singularvalues[i])) for i in first(partition):last(partition)-1])")
     return VidalTensorTrain{ValueType,N}(sitetensors, singularvalues, partition)
 end
 
@@ -201,16 +212,18 @@ mutable struct InverseTensorTrain{ValueType,N} <: TCI.AbstractTensorTrain{ValueT
             ))
         end
 
+        #=
         for i in first(partition):last(partition)-1
             isleftorthogonal(_contract(sitetensors[i], inversesingularvalues[i], (N,), (1,))) || throw(ArgumentError(
-                "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
+                "Error: contracting the tensor at $i with the inv singular value at $i does not lead to a left-orthogonal tensor. (partition=$partition)"
             ))
         end
         for i in first(partition)+1:last(partition)
             isrightorthogonal(_contract(inversesingularvalues[i-1], sitetensors[i], (2,), (1,))) || throw(ArgumentError(
-                "Error: contracting the singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
+                "Error: contracting the inv singular value at $i with the tensor at $(i+1) does not lead to a right-orthogonal tensor. (partition=$partition)"
             ))
         end
+        =#
 
         new{ValueType,N}(sitetensors, inversesingularvalues, partition)
     end
@@ -287,30 +300,32 @@ function settwositetensors!(tt::InverseTensorTrain{ValueType,N}, i::Int, tensor1
     tt.inversesingularvalues[i] = matrix
     tt.sitetensors[i+1] = tensor2
 
-#    println("Update at $i,$(i+1)")
+    #=
+    println("Update at $i,$(i+1)")
     # If sizes are wrong the orthogonality check will throw an error
     if i >= first(partition(tt))+1 && i <= last(partition(tt))
-#        isrightorthogonal(_contract(inversesingularvalue(tt, i-1), TCI.sitetensor(tt, i), (2,), (1,))) || throw(ArgumentError(
-#                "Error: contracting the singular value at $(i-1) with the tensor at $i does not lead to a right-orthogonal tensor."
-#            ))
-#        println("Y[$(i-1)]*S[$i] is right-orthogonal")
+       isrightorthogonal(_contract(inversesingularvalue(tt, i-1), TCI.sitetensor(tt, i), (2,), (1,))) || throw(ArgumentError(
+               "Error: contracting the singular value at $(i-1) with the tensor at $i does not lead to a right-orthogonal tensor."
+           ))
+       println("Y[$(i-1)]*S[$i] is right-orthogonal")
     end
     if i >= first(partition(tt)) && i <= last(partition(tt))-1
         isleftorthogonal(_contract(TCI.sitetensor(tt, i), inversesingularvalue(tt, i), (N,), (1,))) || throw(ArgumentError(
                 "Error: contracting the tensor at $i with the singular value at $i does not lead to a left-orthogonal tensor."
             ))
-#        println("S[$i]*Y[$i] is left-orthogonal")
+       println("S[$i]*Y[$i] is left-orthogonal")
         isrightorthogonal(_contract(inversesingularvalue(tt, i), TCI.sitetensor(tt, i+1), (2,), (1,))) || throw(ArgumentError(
             "Error: contracting the singular value at $(i) with the tensor at $(i+1) does not lead to a right-orthogonal tensor."
             ))
-#        println("Y[$i]*S[$(i+1)] is right-orthogonal")
+       println("Y[$i]*S[$(i+1)] is right-orthogonal")
     end
     if i >= first(partition(tt))-1 && i <= last(partition(tt))-2
-#        isleftorthogonal(_contract(TCI.sitetensor(tt, i+1), inversesingularvalue(tt, i+2), (N,), (1,))) || throw(ArgumentError(
-#                "Error: contracting the tensor at $(i+1) with the singular value at $(i+2) does not lead to a left-orthogonal tensor."
-#            ))
-#        println("S[$(i+1)]*Y[$(i+2)] is left-orthogonal")
+       isleftorthogonal(_contract(TCI.sitetensor(tt, i+1), inversesingularvalue(tt, i+2), (N,), (1,))) || throw(ArgumentError(
+               "Error: contracting the tensor at $(i+1) with the singular value at $(i+2) does not lead to a left-orthogonal tensor."
+           ))
+       println("S[$(i+1)]*Y[$(i+2)] is left-orthogonal")
     end
+    =#
 end
 
 function InverseTensorTrain{ValueType,N}(tt::TCI.AbstractTensorTrain{ValueType})::InverseTensorTrain{ValueType,N} where {ValueType, N}
@@ -745,11 +760,19 @@ function TCI.TensorTrain{ValueType,N}(tt::VidalTensorTrain{ValueType,N})::TCI.Te
     return TCI.TensorTrain{ValueType,N}(sitetensors)
 end
 
-function TCI.TensorTrain{ValueType,N}(tt::SiteTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
+function TCI.TensorTrain(tt::SiteTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
     return TCI.TensorTrain{ValueType,N}(TCI.sitetensors(tt))
 end
 
-
 function TCI.TensorTrain(tt::InverseTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
     return TCI.TensorTrain{ValueType,N}(tt)
+end
+
+function movecenterto!(tt::SiteTensorTrain{ValueType,N}, newcenter::Int) where {ValueType,N}
+    while(center(tt) < newcenter)
+         movecenterright!(tt)
+    end
+    while(center(tt) > newcenter)
+         movecenterleft!(tt)
+    end
 end

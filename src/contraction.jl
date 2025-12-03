@@ -110,7 +110,6 @@ end
 function svd_project_right(A::Array{ValueType,4}, max_r::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, prod(size(A)[1:3]), size(A)[4])
     _, A_proj, _, disc = _factorize(A_, :SVD; maxbonddim=max_r+p, tolerance=0.0, leftorthogonal=false)
-    # println("Discarded proj_right: $disc")
 
     return A_proj'
 end
@@ -118,7 +117,6 @@ end
 function svd_project_left(A::Array{ValueType,4}, max_l::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, size(A)[1], prod(size(A)[2:4]))
     A_proj, _, _, disc = _factorize(A_, :SVD, maxbonddim=max_l+p, tolerance=0.0, leftorthogonal=true)
-    # println("Discarded proj_left: $disc")
 
     return A_proj'
 end
@@ -127,16 +125,12 @@ function random_project_right(A::Array{ValueType,4}, max_r::Int; p::Int=2) where
     A_ = reshape(A, prod(size(A)[1:3]), size(A)[4])
     A_proj = Matrix(qr(A_'*randn(size(A_)[1], max_r+p)).Q)
 
-    # println("From $(size(A_proj)[1]) to $(size(A_proj)[2])")
-
     return A_proj
 end
 
 function random_project_left(A::Array{ValueType,4}, max_l::Int; p::Int=2) where {ValueType}
     A_ = reshape(A, size(A)[1], prod(size(A)[2:4]))
     A_proj = Matrix(qr(A_*randn(size(A_)[2], max_l+p)).Q)'
-
-    # println("From $(size(A_proj)[2]) to $(size(A_proj)[1])")
 
     return A_proj
 end
@@ -545,10 +539,6 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
         Bip1 = _contract(B_proj', Bip1, (2,), (1,))
     end
 
-    # println("Update at $i: Ls[$(i-1)]: $(size(get(Ls, i-1, ones(ValueType, 1, 1, 1)))).")
-    # println("Update at $i: Ai: $(size(Ai)).")
-    # println("Update at $i: Bi: $(size(Bi)).")
-    # println("Update at $i: Ci: $(size(Ci))")
     Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
     
@@ -563,21 +553,18 @@ function updatecore!(A::SiteTensorTrain{ValueType,4}, B::SiteTensorTrain{ValueTy
         leftorthogonal=(direction == :forward)
     )
 
-    # println("Going $(direction) at site $i with $method: left?=$(isapprox(left' * left, I, atol=1e-7)), right?=$(isapprox(right * right', I, atol=1e-7))")
     # Update cores
     Ci = reshape(left, size(Ci, 1), size(Ci, 2), size(Ci, 3), newbonddim)
     Cip1 = reshape(right, newbonddim, size(Cip1, 2), size(Cip1, 3), size(Cip1, 4))
 
-    # println("Premosse update $i: A center: $(center(A)), B center: $(center(B)), C center: $(center(C))")
-
-    if direction == :forward
-        movecenterright!(A); movecenterright!(B)
-    else
-        movecenterleft!(A); movecenterleft!(B)
+    if i != last(partition(C)) && i != first(partition(C))-1 # if not on edge
+        if direction == :forward
+            movecenterright!(A); movecenterright!(B)
+        else
+            movecenterleft!(A); movecenterleft!(B)
+        end
     end
-
     settwositetensors!(C, i, Ci, Cip1)
-    # println("Postmose update $i: A center: $(center(A)), B center: $(center(B)), C center: $(center(C))")
     return disc
 end
 
@@ -605,7 +592,6 @@ function leftenvironment!(
         Bi = _contract(B_proj_left, Bi, (2,), (1,))
     end
 
-    # println("Ls[$(i-1)]: $(size(get(Ls, i-1, ones(ValueType, 1, 1, 1)))). Ai: $(size(Ai)). Bi: $(size(Bi)). Ci: $(size(Ci))")
     Ltmp = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
     Ltmp = _contract(Ltmp, Bi, (1,4,), (1,2,))
     Ls[i] = _contract(Ltmp, conj(Ci), (1,2,4,), (1,2,3,))
@@ -635,11 +621,8 @@ function rightenvironment!(
         Bi = _contract(Bi, B_proj_right, (4,), (1,))
     end
 
-    # println("Rs[$(i+1)]: $(size(get(Rs, i+1, ones(ValueType, 1, 1, 1)))). Ai: $(size(Ai)). Bi: $(size(Bi)). Ci: $(size(Ci))")
     Rtmp = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
-    # println("Rtmp: $(size(Rtmp)). Ai: $(size(Ai)). Bi: $(size(Bi)).")
     Rtmp = _contract(Bi, Rtmp, (3,4,), (3,5,))
-    # println("Rtmp: $(size(Rtmp)). Ai: $(size(Ai)).")
     Rs[i] = _contract(Ai, Rtmp, (2,3,4), (4,2,5,))
 end
 
@@ -1079,7 +1062,7 @@ function contract_distr_fit(
             end
         else # Precompute left environment if going backward
             for i in first_site:last_site-2
-                leftenvironment!(Ls, A, B, C, i-1; random_env, p)
+                leftenvironment!(Ls, A, B, C, i; random_env, p)
             end
         end
 
@@ -1089,20 +1072,20 @@ function contract_distr_fit(
             if sweep % 2 == juliarank % 2
                 direction = :forward
                 for i in first_site:last_site-1
-                    i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
+                    i > first_site && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
 
                     disc = updatecore!(A, B, C, i, Ls, Rs;
-                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                        method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
                     tot_disc += disc
                 end
             else
                 direction = :backward
                 for i in last_site-1:-1:first_site
-                    i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
+                    i < last_site-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
 
                     disc = updatecore!(A, B, C, i, Ls, Rs;
-                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                        method, tolerance=tolerance/((n-1)), maxbonddim, random_update, p)
 
                     tot_disc += disc
                 end
@@ -1127,23 +1110,19 @@ function contract_distr_fit(
 
                         MPI.Waitall([reqs, reqr])
                         disc = updatecore!(A, B, C, last_site, Ls, Rs;
-                            method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
+                            method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, random_update)
 
                         Ci = TCI.sitetensor(C, last_site)
                         Yci = inversesingularvalue(C, last_site)
                         Cip1 = TCI.sitetensor(C, last_site+1)
 
-                        reqs = MPI.Isend(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(collect(size(Yci)), comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+2)
-
-                        MPI.Waitall([reqs, reqs1, reqs2])
-
-                        reqs = MPI.Isend(Ci, comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(Yci, comm; dest=mpirank+1, tag=3*juliarank+1)
-                        reqs2 = MPI.Isend(Cip1, comm; dest=mpirank+1, tag=3*juliarank+2)
-
-                        MPI.Waitall([reqs, reqs1, reqs2])
+                        MPI.Send(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
+                        MPI.Send(collect(size(Yci)), comm; dest=mpirank+1, tag=3*juliarank+1)
+                        MPI.Send(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+2)
+                        
+                        MPI.Send(Ci, comm; dest=mpirank+1, tag=3*juliarank)
+                        MPI.Send(Yci, comm; dest=mpirank+1, tag=3*juliarank+1)
+                        MPI.Send(Cip1, comm; dest=mpirank+1, tag=3*juliarank+2)
 
                         rightenvironment!(Rs, A, B, C, last_site+1; random_env, p)
                     end
@@ -1163,13 +1142,21 @@ function contract_distr_fit(
                         
                         MPI.Waitall([reqs, reqr])
 
-                        sizes = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1))
-                        sizes1 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        sizes2 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+2)
+                        sizes = Vector{Int}(undef, 4)
+                        sizes1 = Vector{Int}(undef, 2)
+                        sizes2 = Vector{Int}(undef, 4)
+
+                        MPI.Recv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        MPI.Recv!(sizes2, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
                         
-                        Ci = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1))
-                        Yci = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        Cip1 = MPI.recv(comm; source=mpirank-1, tag=3*(juliarank-1)+2)
+                        Ci = Array{ValueType,4}(undef, sizes...)
+                        Yci = Array{Float64,2}(undef, sizes1...)
+                        Cip1 = Array{ValueType,4}(undef, sizes2...)
+                        
+                        MPI.Recv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(Yci, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        MPI.Recv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
 
                         settwositetensors!(C, first_site-1, Ci, Yci, Cip1)
 
@@ -1188,38 +1175,60 @@ function contract_distr_fit(
         end
     end
     
-
     # Redistribute the tensor train among the processes.
     if synchedoutput
-        if juliarank == 1
-            received_sitetensors::Vector{Array{ValueType,4}} = Vector{Array{ValueType,4}}(undef, n)
-            received_inversesingularvalues::Vector{Matrix{ValueType}} = Vector{Matrix{ValueType}}(undef, n-1)
-            for j in 2:nprocs
-                received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
-                received_inversesingularvalues[partitions[j][1]:partitions[j][end]-1] = MPI.recv(comm; source=j-1, tag=2)
-            end
-        else
-            send_sitetensors = TCI.sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
-            send_inversesingularvalues = inversesingularvalues(C)[partitions[juliarank][1]:partitions[juliarank][end]-1]
-            MPI.send(send_sitetensors, comm; dest=0, tag=1)
-            MPI.send(send_inversesingularvalues, comm; dest=0, tag=2)
-        end
-
-        nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
+        all_sitetensors = Vector{Array{ValueType,4}}(undef, n)
+        all_inversesingularvalues = Vector{Matrix{ValueType}}(undef, n-1)
         
-        if juliarank == 1
-            received_sitetensors[1:partitions[1][end]] = TCI.sitetensors(C)[1:partitions[1][end]]
-            received_inversesingularvalues[1:partitions[1][end]-1] = inversesingularvalues(C)[1:partitions[1][end]-1]
-            for j in 2:nprocs
-                MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
-                MPI.send(received_inversesingularvalues, comm; dest=j-1, tag=2)
+        # Copy local data
+        all_sitetensors[partitions[juliarank]] .= [TCI.sitetensor(C, i) for i in partitions[juliarank]]
+        all_inversesingularvalues[
+            partitions[juliarank][1]:min(partitions[juliarank][end], n-1)
+            ] .= [
+            inversesingularvalue(C, i) for i in partitions[juliarank][1]:min(partitions[juliarank][end], n-1)
+        ]
+
+        # Non-blocking sends: broadcast my partition to all other processes
+        send_reqs = MPI.Request[]
+        for i in partitions[juliarank]
+            for dest in 1:nprocs
+                if dest != juliarank
+                    send_tag = 4*((juliarank-1)*(nprocs*n)+(dest-1)*n+(i-1))
+                    push!(send_reqs, MPI.Isend(collect(size(TCI.sitetensor(C, i))), comm; dest=dest-1, tag=send_tag))
+                    push!(send_reqs, MPI.Isend(TCI.sitetensor(C, i), comm; dest=dest-1, tag=send_tag+1))
+                    if i < n
+                        push!(send_reqs, MPI.Isend(collect(size(inversesingularvalue(C, i))), comm; dest=dest-1, tag=send_tag+2))
+                        push!(send_reqs, MPI.Isend(inversesingularvalue(C, i), comm; dest=dest-1, tag=send_tag+3))
+                    end
+                end
             end
-        else
-            received_sitetensors = MPI.recv(comm; source=0, tag=1)
-            received_inversesingularvalues = MPI.recv(comm; source=0, tag=2)
         end
 
-        return InverseTensorTrain{ValueType,4}(received_sitetensors, received_inversesingularvalues, 1:n)
+        # Wait for all sends to complete
+        MPI.Waitall(send_reqs)
+
+        # Blocking receives: collect data from all other processes
+        for source in 1:nprocs
+            if source != juliarank
+                for i in partitions[source]
+                    recv_tag = 4*((source-1)*(nprocs*n)+(juliarank-1)*n+(i-1))
+                    sizes = Vector{Int}(undef, 4)
+                    MPI.Recv!(sizes, comm; source=source-1, tag=recv_tag)
+                    all_sitetensors[i] = Array{ValueType,4}(undef, sizes...)
+                    MPI.Recv!(all_sitetensors[i], comm; source=source-1, tag=recv_tag+1)
+                    if i < n
+                        sizesY = Vector{Int}(undef, 2)
+                        MPI.Recv!(sizesY, comm; source=source-1, tag=recv_tag+2)
+                        all_inversesingularvalues[i] = Array{ValueType,2}(undef, sizesY...)
+                        MPI.Recv!(all_inversesingularvalues[i], comm; source=source-1, tag=recv_tag+3)
+                    end
+                end
+            end
+        end
+        
+
+        # TODO, this should be 1:n, I don't know whether partitions[juliarank] is correct
+        return InverseTensorTrain{ValueType,4}(all_sitetensors, all_inversesingularvalues, partitions[juliarank])
     end
 
     return C
@@ -1267,7 +1276,6 @@ function contract_distr_fit(
         )
     end
 
-    # println("La tolerance usata e': $tolerance")
     if !synchedinput
         synchronize_tt!(A)
         synchronize_tt!(B)
@@ -1380,11 +1388,11 @@ function contract_distr_fit(
                 rightenvironment!(Rs, A, B, C, i; random_env, p)
             end
         else # Precompute left environment if going backward
-            setcenter!(A, last_site-1)
-            setcenter!(B, last_site-1)
+            setcenter!(A, last_site)
+            setcenter!(B, last_site)
             setcenter!(C, last_site)
             for i in first_site:last_site-2
-                leftenvironment!(Ls, A, B, C, i-1; random_env, p)
+                leftenvironment!(Ls, A, B, C, i; random_env, p)
             end
         end
 
@@ -1396,20 +1404,23 @@ function contract_distr_fit(
                 direction = :forward
                 for i in first_site:last_site-1
 
-                    i > 1 && leftenvironment!(Ls, A, B, C, i-1; random_env, p)
+                    if i > first_site
+                        leftenvironment!(Ls, A, B, C, i-1; random_env, p)
+                    end
 
                     disc = updatecore!(A, B, C, i, Ls, Rs;
-                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction=:forward, random_update, p)
 
                     tot_disc += disc
                 end
             else
                 direction = :backward
                 for i in last_site-1:-1:first_site
-                    i < n-1 && rightenvironment!(Rs, A, B, C, i+2; random_env, p)
-
+                    if i < last_site-1
+                        rightenvironment!(Rs, A, B, C, i+2; random_env, p)
+                    end
                     disc = updatecore!(A, B, C, i, Ls, Rs;
-                        method, tolerance=tolerance/((n-1)), maxbonddim, direction, random_update, p)
+                        method, tolerance=tolerance/((n-1)), maxbonddim, direction=:backward, random_update, p)
 
                     tot_disc += disc
                 end
@@ -1467,23 +1478,20 @@ function contract_distr_fit(
 
                         
                         sizes = Vector{Int}(undef, 4)
-                        sizes1 = Vector{Int}(undef, 2)
-                        sizes2 = Vector{Int}(undef, 4)
+                        sizes1 = Vector{Int}(undef, 4)
                         
-                        reqr = MPI.Irecv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        
-                        MPI.Waitall([reqr, reqr1])
-                        
+                        MPI.Recv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                                                
                         Ci = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
-                        Cip1 = ones(ValueType, sizes2[1], sizes2[2], sizes2[3], sizes2[4])
+                        Cip1 = ones(ValueType, sizes1[1], sizes1[2], sizes1[3], sizes1[4])
 
-                        reqr = MPI.Irecv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        reqr1 = MPI.Irecv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        
-                        MPI.Waitall([reqr, reqr1])
+                        MPI.Recv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+
 
                         settwositetensors!(C, first_site-1, Ci, Cip1)
+                        movecenterright!(C)
 
                         leftenvironment!(Ls, A, B, C, first_site-1; random_env, p)
                     end
@@ -1498,83 +1506,180 @@ function contract_distr_fit(
             end
         end
 
+        movecenterto!(A, juliarank == 1 ? last(partition(A)) : first(partition(A)))
+        movecenterto!(B, juliarank == 1 ? last(partition(B)) : first(partition(B)))
+        movecenterto!(C, juliarank == 1 ? last(partition(C)) : first(partition(C)))
+
+        if false
+            if juliarank == 2
+                sitetensorsA = deepcopy(TCI.sitetensors(A))
+                sitetensorsB = deepcopy(TCI.sitetensors(B))
+                sitetensorsC = deepcopy(TCI.sitetensors(C))
+
+                sitetensorsA[partition(A)] = MPI.recv(comm; source=0, tag=42)
+                sitetensorsB[partition(B)] = MPI.recv(comm; source=0, tag=43)
+                MPI.send(sitetensorsC[partition(C)], comm; dest=0, tag=44)
+
+                # Reconstruct A and B with received tensors
+                A = SiteTensorTrain{ValueType,4}(sitetensorsA, center(A)-1, 1:n)
+                B = SiteTensorTrain{ValueType,4}(sitetensorsB, center(B)-1, 1:n)
+
+                for i in n:-1:first_site+1
+                    rightenvironment!(Rs, A, B, C, i; random_env, p)
+                end
+                MPI.send(Rs[first_site+1], comm; dest=0, tag=45)
+            else
+                sitetensorsA = deepcopy(TCI.sitetensors(A))
+                sitetensorsB = deepcopy(TCI.sitetensors(B))
+                sitetensorsC = deepcopy(TCI.sitetensors(C))
+
+                MPI.send(sitetensorsA[last(partition(A))+1:end], comm; dest=1, tag=42)
+                MPI.send(sitetensorsB[last(partition(B))+1:end], comm; dest=1, tag=43)
+                sitetensorsC[last(partition(C))+1:end] = MPI.recv(comm; source=1, tag=44)
+
+                C = SiteTensorTrain{ValueType,4}(sitetensorsC, center(C), partition(C))
+
+                for i in 1:last_site-1
+                    leftenvironment!(Ls, A, B, C, i; random_env, p)
+                end
+
+                Rs[last_site+2] = MPI.recv(comm; source=1, tag=45)
+
+                updatecore!(A, B, C, last_site, Ls, Rs; 
+                    method, tolerance, maxbonddim,
+                    direction=:backward, random_update, p)
+            end
+        end
+
         # Synchronize results across processes using tree-based communication
         rounds = ceil(Int, log2(nprocs))
+        my_first = partner_first = my_last = partner_last = my_old_first = partner_old_first = my_old_last = partner_old_last = 0
 
-        # TODO need to test this.
         for s in 1:rounds
+            my_old_first, partner_old_first, my_old_last, partner_old_last = my_first, partner_first, my_last, partner_last
             delta = 2^(s-1)
             
             if ((juliarank - 1) % (2*delta)) == 0 # I'm a receiver
-            juliapartner = juliarank + delta
-            
-                if juliapartner <= nprocs
-                    my_first = partitions[juliarank][1]
-                    my_last = partitions[juliarank][end]
-                    partner_first = partitions[juliapartner][1]
-                    partner_last = partitions[min(juliapartner + delta - 1, nprocs)][end]
-                    
-                    # Receive partner's portion of C
-                    sizes = Vector{Int}(undef, partner_last - partner_first + 1)
-                    for i in partner_first:partner_last
-                        sizes_i = MPI.recv(comm; source=juliapartner-1, tag=100*s + i)
-                        
-                        Ci = ones(ValueType, sizes_i[1], sizes_i[2], sizes_i[3], sizes_i[4])
-                        # TODO no recv! ?
-                        Ci = MPI.recv(comm; source=juliapartner-1, tag=200*s + i)
-                        Ci = Array{ValueType,4}(Ci) # For JET
-                        setsitetensor!(C, i, Ci)
-                    end
-                    
-                    # Update partitions to include partner's range
-                    setpartition!(C, my_first:partner_last)
-                end
-            elseif ((juliarank - 1) % (2*delta)) == delta # I'm a sender
-                juliapartner = juliarank - delta
+                juliapartner = juliarank + delta
                 
-                if juliapartner >= 1
-                    my_first = partitions[juliarank][1]
-                    my_last = partitions[min(juliarank + delta - 1, nprocs)][end]
-                    
-                    # Send my portion of C to partner
-                    for i in my_first:my_last
-                        Ci = TCI.sitetensor(C, i)
-                        MPI.send(collect(size(Ci)), comm; dest=juliapartner-1, tag=100*s + i)
-                        MPI.send(Ci, comm; dest=juliapartner-1, tag=200*s + i)
+                my_first = partitions[juliarank][1]
+                partner_first = partitions[juliapartner][1]
+                my_last = partner_first - 1
+                partner_last = partitions[juliapartner + delta - 1][end]
+                
+                movecenterto!(A, my_last)
+                movecenterto!(B, my_last)
+                movecenterto!(C, my_last)
+                # Receive partner's portion of C
+                sitetensorsA = deepcopy(TCI.sitetensors(A))
+                sitetensorsB = deepcopy(TCI.sitetensors(B))
+                sitetensorsC = deepcopy(TCI.sitetensors(C))
+                
+                sitetensorsC[partner_first:partner_last] = MPI.recv(comm; source=juliapartner-1, tag=2*juliapartner)
+                MPI.send(sitetensorsA[partner_first:partner_last], comm; dest=juliapartner-1, tag=2*juliapartner)
+                MPI.send(sitetensorsB[partner_first:partner_last], comm; dest=juliapartner-1, tag=2*juliapartner+1)
+                
+                C = SiteTensorTrain{ValueType,4}(sitetensorsC, center(C), partition(C))
+
+                if s == 1
+                    if juliarank != 1
+                        for i in my_first:my_last-1
+                            leftenvironment!(Ls, A, B, C, i; random_env, p)
+                        end
+                    else
+                        for i in 1:my_last-1
+                            leftenvironment!(Ls, A, B, C, i; random_env, p)
+                        end
+                    end
+                else
+                    for i in my_old_last:my_last-1
+                        leftenvironment!(Ls, A, B, C, i; random_env, p)
                     end
                 end
+
+                Rs[my_last+2] = MPI.recv(comm; source = juliapartner - 1, tag = 2*juliapartner + 1)
+
+
+                # Perform update at boundary between my partition and partner's partition
+                # Update at site my_last (boundary site)
+                disc = updatecore!(A, B, C, my_last, Ls, Rs; 
+                    method, tolerance, maxbonddim,
+                    direction=:backward, random_update, p)
+                
+                # Update partitions to include partner's range
+                setpartition!(A, my_first:partner_last)
+                setpartition!(B, my_first:partner_last)
+                setpartition!(C, my_first:partner_last)
+            elseif (s == 1) || (((juliarank - 1) % (2*delta)) == delta) # I'm a sender
+                juliapartner = juliarank - delta
+                my_first = partitions[juliarank][1]
+                partner_first = partitions[juliapartner][1]
+                partner_last = my_first - 1
+                my_last = partitions[juliarank+delta-1][end]
+
+                movecenterto!(A, my_first)
+                movecenterto!(B, my_first)
+                movecenterto!(C, my_first)
+                # Receive partner's portion of C
+                sitetensorsA = deepcopy(TCI.sitetensors(A))
+                sitetensorsB = deepcopy(TCI.sitetensors(B))
+                sitetensorsC = deepcopy(TCI.sitetensors(C))
+                
+                MPI.send(sitetensorsC[my_first:my_last], comm; dest=juliapartner-1, tag=2*juliarank)
+                sitetensorsA[my_first:my_last] = MPI.recv(comm; source=juliapartner-1, tag=2*juliarank)
+                sitetensorsB[my_first:my_last] = MPI.recv(comm; source=juliapartner-1, tag=2*juliarank+1)
+
+                A = SiteTensorTrain{ValueType,4}(sitetensorsA, center(A)-1, partner_first:my_last)
+                B = SiteTensorTrain{ValueType,4}(sitetensorsB, center(B)-1, partner_first:my_last)
+
+                if s == 1
+                    if my_last != n
+                        for i in my_last:-1:my_first+1
+                            rightenvironment!(Rs, A, B, C, i; random_env, p)
+                        end
+                    else
+                        for i in n:-1:my_first+1
+                            rightenvironment!(Rs, A, B, C, i; random_env, p)
+                        end
+                    end
+                else
+                    for i in partner_old_first:-1:my_first+1
+                        rightenvironment!(Rs, A, B, C, i; random_env, p)
+                    end
+                end
+
+                MPI.send(Rs[my_first+1], comm; dest=juliapartner-1, tag=2*juliarank+1)
             end
-            
-            MPI.Barrier(comm)
         end
 
+
     end
+
     nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
 
     # Redistribute the tensor train among the processes.
     if synchedoutput
-        if juliarank == 1
-            received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
-            for j in 2:nprocs
-                received_sitetensors[partitions[j][1]:partitions[j][end]] = MPI.recv(comm; source=j-1, tag=1)
+        # Rank 1 already has the full TT from tree reduction: broadcast it to everyone.
+        received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
+        for i in 1:n
+            if juliarank == 1
+                Ci = TCI.sitetensor(C, i)
+                sz = Int[size(Ci, 1), size(Ci, 2), size(Ci, 3), size(Ci, 4)]
+            else
+                sz = Vector{Int}(undef, 4)
             end
-        else
-            send_sitetensors = TCI.sitetensors(C)[partitions[juliarank][1]:partitions[juliarank][end]]
-            MPI.send(send_sitetensors, comm; dest=0, tag=1)
-        end
-
-        nprocs = MPI.Comm_size(comm) # In case not all processes where used to compute
-        
-        if juliarank == 1
-            received_sitetensors[1:partitions[1][end]] = TCI.sitetensors(C)[1:partitions[1][end]]
-            for j in 2:nprocs
-                MPI.send(received_sitetensors, comm; dest=j-1, tag=1)
+            # Broadcast size
+            MPI.Bcast!(sz, comm; root=0)
+            # Broadcast data
+            if juliarank == 1
+                buf = Ci
+            else
+                buf = Array{ValueType,4}(undef, sz...)
             end
-        else
-            received_sitetensors = MPI.recv(comm; source=0, tag=1)
+            MPI.Bcast!(buf, comm; root=0)
+            received_sitetensors[i] = buf
         end
-
-        return SiteTensorTrain{ValueType,4}(Vector{Array{ValueType,4}}(received_sitetensors), 1:n)
+        return SiteTensorTrain{ValueType,4}(received_sitetensors, 1, 1:n)
     end
 
     return C
