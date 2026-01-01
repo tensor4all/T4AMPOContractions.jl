@@ -4,8 +4,8 @@ using Test
 using LinearAlgebra
 using Random
 
-# Run Aqua and JET tests only on Julia 1.11+ to avoid version dependency issues
-if VERSION >= v"1.11"
+# Run Aqua and JET tests when not explicitly skipped
+if !haskey(ENV, "SKIP_AQUA_JET")
     using Pkg
     Pkg.add("Aqua")
     Pkg.add("JET")
