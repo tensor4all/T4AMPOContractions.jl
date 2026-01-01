@@ -3,5 +3,13 @@
 *.jl.mem
 /Manifest.toml
 /docs/build/
+/docs/Manifest.toml
 LocalPreferences.toml
 .vscode/settings.json
+
+# Local logs / artifacts (do not commit)
+/doc_build.log
+/docs/doc_build.log
+/instantiate_mpo_local.log
+/test_mpo_local.log
+/test_output*.log
