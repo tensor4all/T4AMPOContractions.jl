@@ -1,6 +1,6 @@
 name = "T4AMPOContractions"
 uuid = "953bfbbc-cb66-4acc-a854-9589b1f489b2"
-version = "0.9.18"
+version = "0.9.19"
 authors = ["Simone Foderà <simone.fodera@lmu.de>", "Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
 
 [deps]
@@ -12,10 +12,6 @@ MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 T4ATensorTrain = "ec6ec972-96ae-4a21-b859-3911b77e305f"
-
-[sources]
-T4ATensorCI = {path = "../T4ATensorCI.jl"}
-T4ATensorTrain = {path = "../T4ATensorTrain.jl"}
 
 [compat]
 Aqua = "0.8.14"
