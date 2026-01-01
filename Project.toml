@@ -4,8 +4,6 @@ version = "0.9.19"
 authors = ["Simone Foderà <simone.fodera@lmu.de>", "Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
 
 [deps]
-Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
-JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
@@ -14,8 +12,6 @@ T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 T4ATensorTrain = "ec6ec972-96ae-4a21-b859-3911b77e305f"
 
 [compat]
-Aqua = "0.8"
-JET = "0.10"
 MPI = "0.20"
 MPIPreferences = "0.1"
 Random = "1"
