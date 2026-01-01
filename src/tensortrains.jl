@@ -14,6 +14,7 @@ import T4ATensorTrain: setsitetensor!, settwositetensors!
 import T4ATensorTrain: movecenterleft!, movecenterright!, movecenterto!
 import T4ATensorTrain: movecenterleft, movecenterright
 import T4ATensorTrain: centercanonicalize, centercanonicalize!
+import T4ATensorTrain: add, subtract
 
 # Orthogonality helpers
 import T4ATensorTrain: isleftorthogonal, isrightorthogonal
