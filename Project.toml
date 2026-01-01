@@ -1,44 +1,29 @@
 name = "T4AMPOContractions"
 uuid = "953bfbbc-cb66-4acc-a854-9589b1f489b2"
-authors = ["Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
+authors = ["Simone Foderà <simone.fodera@lmu.de>", "Ritter.Marc <Ritter.Marc@physik.uni-muenchen.de>, Hiroshi Shinaoka <h.shinaoka@gmail.com> and contributors"]
 version = "0.9.18"
 
 [deps]
-BitIntegers = "c3b6d118-76ef-56ca-8cc7-ebb389d030a1"
-EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 
-[weakdeps]
-ITensorMPS = "0d1a4710-d33b-49a5-8f18-73bdf49b47e2"
-ITensors = "9136182c-28ba-11e9-034c-db9fb085ebd5"
-
-[extensions]
-TCIITensorConversion = ["ITensors", "ITensorMPS"]
-
 [compat]
-BitIntegers = "0.3.5"
-EllipsisNotation = "1"
-ITensorMPS = "0.2, 0.3"
-ITensors = "0.6, 0.7, 0.8, 0.9"
-QuadGK = "2.9"
+MPI = "0.20.22"
+MPIPreferences = "0.1.11"
 Random = "1.10.0"
 T4ATensorCI = "0.12"
 julia = "1.6"
-MPI = "0.20.22"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
-ITensors = "9136182c-28ba-11e9-034c-db9fb085ebd5"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
-QuanticsGrids = "634c7f73-3e90-4749-a1bd-001b8efc642d"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [targets]
-test = ["Aqua", "Test", "Random", "ITensors", "ITensorMPS", "Zygote", "Optim", "QuanticsGrids", "JET"]
+test = ["Aqua", "Test", "Random", "Zygote", "Optim", "JET"]
