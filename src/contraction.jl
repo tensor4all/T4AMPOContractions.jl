@@ -15,27 +15,28 @@ export contract_naive, contract_TCI, contract_zipup
 const _localdims = _localdims_base
 const _contract = _contract_base
 
-
-Base.length(obj::Contraction) = length(obj.mpo[1])
+# Base.length, Base.lastindex, Base.getindex are now defined in T4ATensorCI, no need to redefine
+# Base.length(obj::Contraction) = length(obj.mpo[1])
 
 function sitedims(obj::Contraction{T})::Vector{Vector{Int}} where {T}
     return obj.sitedims
 end
 
-function Base.lastindex(obj::Contraction{T}) where {T}
-    return lastindex(obj.mpo[1])
-end
+# function Base.lastindex(obj::Contraction{T}) where {T}
+#     return lastindex(obj.mpo[1])
+# end
 
-function Base.getindex(obj::Contraction{T}, i) where {T}
-    return getindex(obj.mpo[1], i)
-end
+# function Base.getindex(obj::Contraction{T}, i) where {T}
+#     return getindex(obj.mpo[1], i)
+# end
 
-function Base.show(io::IO, obj::Contraction{T}) where {T}
-    print(
-        io,
-        "$(typeof(obj)) of tensor trains with ranks $(rank(obj.mpo[1])) and $(rank(obj.mpo[2]))",
-    )
-end
+# Base.show is now defined in T4ATensorCI, no need to redefine
+# function Base.show(io::IO, obj::Contraction{T}) where {T}
+#     print(
+#         io,
+#         "$(typeof(obj)) of tensor trains with ranks $(rank(obj.mpo[1])) and $(rank(obj.mpo[2]))",
+#     )
+# end
 
 function Contraction(
     a::TensorTrain{T,4},
@@ -113,13 +114,14 @@ function _contract(
     return reshape(Cmat, _getindex(size(a), rest_idx_a)..., _getindex(size(b), rest_idx_b)...)
 end
 =#
-function _unfuse_idx(obj::Contraction{T}, n::Int, idx::Int)::Tuple{Int,Int} where {T}
-    return reverse(divrem(idx - 1, _localdims(obj, n)[1]) .+ 1)
-end
+# _unfuse_idx and _fuse_idx are now defined in T4ATensorCI, no need to redefine
+# function _unfuse_idx(obj::Contraction{T}, n::Int, idx::Int)::Tuple{Int,Int} where {T}
+#     return reverse(divrem(idx - 1, _localdims(obj, n)[1]) .+ 1)
+# end
 
-function _fuse_idx(obj::Contraction{T}, n::Int, idx::Tuple{Int,Int})::Int where {T}
-    return idx[1] + _localdims(obj, n)[1] * (idx[2] - 1)
-end
+# function _fuse_idx(obj::Contraction{T}, n::Int, idx::Tuple{Int,Int})::Int where {T}
+#     return idx[1] + _localdims(obj, n)[1] * (idx[2] - 1)
+# end
 
 function _extend_cache(oldcache::Matrix{T}, a_ell::Array{T,4}, b_ell::Array{T,4}, i::Int, j::Int) where {T}
     # (link_a, link_b) * (link_a, s, link_a') => (link_b, s, link_a')
@@ -454,35 +456,36 @@ function evaluateright(
 end
 
 
-function evaluate(obj::Contraction{T}, indexset::AbstractVector{Int})::T where {T}
-    if length(obj) != length(indexset)
-        error("Length mismatch: $(length(obj)) != $(length(indexset))")
-    end
-
-    indexset_unfused = [_unfuse_idx(obj, n, indexset[n]) for n = 1:length(obj)]
-    return evaluate(obj, indexset_unfused)
-end
-
-function evaluate(
-    obj::Contraction{T},
-    indexset::AbstractVector{Tuple{Int,Int}},
-)::T where {T}
-    if length(obj) != length(indexset)
-        error("Length mismatch: $(length(obj)) != $(length(indexset))")
-    end
-
-    midpoint = div(length(obj), 2)
-    res = sum(
-        evaluateleft(obj, indexset[1:midpoint]) .*
-        evaluateright(obj, indexset[midpoint+1:end]),
-    )
-
-    if obj.f isa Function
-        return obj.f(res)
-    else
-        return res
-    end
-end
+# evaluate methods are now defined in T4ATensorCI, no need to redefine
+# function evaluate(obj::Contraction{T}, indexset::AbstractVector{Int})::T where {T}
+#     if length(obj) != length(indexset)
+#         error("Length mismatch: $(length(obj)) != $(length(indexset))")
+#     end
+#
+#     indexset_unfused = [_unfuse_idx(obj, n, indexset[n]) for n = 1:length(obj)]
+#     return evaluate(obj, indexset_unfused)
+# end
+#
+# function evaluate(
+#     obj::Contraction{T},
+#     indexset::AbstractVector{Tuple{Int,Int}},
+# )::T where {T}
+#     if length(obj) != length(indexset)
+#         error("Length mismatch: $(length(obj)) != $(length(indexset))")
+#     end
+#
+#     midpoint = div(length(obj), 2)
+#     res = sum(
+#         evaluateleft(obj, indexset[1:midpoint]) .*
+#         evaluateright(obj, indexset[midpoint+1:end]),
+#     )
+#
+#     if obj.f isa Function
+#         return obj.f(res)
+#     else
+#         return res
+#     end
+# end
 
 function _lineari(dims, mi)::Integer
     ci = CartesianIndex(Tuple(mi))
@@ -494,22 +497,22 @@ function lineari(sitedims::Vector{Vector{Int}}, indexset::Vector{MultiIndex})::V
     return [_lineari(sitedims[l], indexset[l]) for l in 1:length(indexset)]
 end
 
+# Contraction callable methods are now defined in T4ATensorCI, no need to redefine
+# function (obj::Contraction{T})(indexset::AbstractVector{Int})::T where {T}
+#     return evaluate(obj, indexset)
+# end
 
-function (obj::Contraction{T})(indexset::AbstractVector{Int})::T where {T}
-    return evaluate(obj, indexset)
-end
+# function (obj::Contraction{T})(indexset::AbstractVector{<:AbstractVector{Int}})::T where {T}
+#     return evaluate(obj, lineari(obj.sitedims, indexset))
+# end
 
-function (obj::Contraction{T})(indexset::AbstractVector{<:AbstractVector{Int}})::T where {T}
-    return evaluate(obj, lineari(obj.sitedims, indexset))
-end
-
-function (obj::Contraction{T})(
-    leftindexset::AbstractVector{MultiIndex},
-    rightindexset::AbstractVector{MultiIndex},
-    ::Val{M},
-)::Array{T,M + 2} where {T,M}
-    return batchevaluate(obj, leftindexset, rightindexset, Val(M))
-end
+# function (obj::Contraction{T})(
+#     leftindexset::AbstractVector{MultiIndex},
+#     rightindexset::AbstractVector{MultiIndex},
+#     ::Val{M},
+# )::Array{T,M + 2} where {T,M}
+#     return batchevaluate(obj, leftindexset, rightindexset, Val(M))
+# end
 
 function batchevaluate(obj::Contraction{T},
     leftindexset::AbstractVector{MultiIndex},
@@ -633,46 +636,48 @@ function contract_naive(
     return contract_naive(Contraction(a, b); tolerance, maxbonddim)
 end
 
-function contract_naive(
-    obj::Contraction{T};
-    tolerance=0.0, maxbonddim=typemax(Int)
-)::TensorTrain{T,4} where {T}
-    if obj.f isa Function
-        error("Naive contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
-    end
+# contract_naive with Contraction argument is now defined in T4ATensorCI, no need to redefine
+# function contract_naive(
+#     obj::Contraction{T};
+#     tolerance=0.0, maxbonddim=typemax(Int)
+# )::TensorTrain{T,4} where {T}
+#     if obj.f isa Function
+#         error("Naive contraction implementation cannot contract matrix product with a function. Use algorithm=:TCI instead.")
+#     end
+#
+#     a, b = obj.mpo
+#     tt = TensorTrain{T,4}(_contractsitetensors.(sitetensors(a), sitetensors(b)))
+#     if tolerance > 0 || maxbonddim < typemax(Int)
+#         compress!(tt, :SVD; tolerance, maxbonddim)
+#     end
+#     return tt
+# end
 
-    a, b = obj.mpo
-    tt = TensorTrain{T,4}(_contractsitetensors.(sitetensors(a), sitetensors(b)))
-    if tolerance > 0 || maxbonddim < typemax(Int)
-        compress!(tt, :SVD; tolerance, maxbonddim)
-    end
-    return tt
-end
-
-function _reshape_fusesites(t::AbstractArray{T}) where {T}
-    shape = size(t)
-    return reshape(t, shape[1], prod(shape[2:end-1]), shape[end]), shape[2:end-1]
-end
-
-function _reshape_splitsites(
-    t::AbstractArray{T},
-    legdims::Union{AbstractVector{Int},Tuple},
-) where {T}
-    return reshape(t, size(t, 1), legdims..., size(t, ndims(t)))
-end
-
-function _findinitialpivots(f, localdims, nmaxpivots)::Vector{MultiIndex}
-    pivots = MultiIndex[]
-    for _ in 1:nmaxpivots
-        pivot_ = [rand(1:d) for d in localdims]
-        pivot_ = optfirstpivot(f, localdims, pivot_)
-        if abs(f(pivot_)) == 0.0
-            continue
-        end
-        push!(pivots, pivot_)
-    end
-    return pivots
-end
+# _reshape_fusesites, _reshape_splitsites, _findinitialpivots are now defined in T4ATensorCI, no need to redefine
+# function _reshape_fusesites(t::AbstractArray{T}) where {T}
+#     shape = size(t)
+#     return reshape(t, shape[1], prod(shape[2:end-1]), shape[end]), shape[2:end-1]
+# end
+#
+# function _reshape_splitsites(
+#     t::AbstractArray{T},
+#     legdims::Union{AbstractVector{Int},Tuple},
+# ) where {T}
+#     return reshape(t, size(t, 1), legdims..., size(t, ndims(t)))
+# end
+#
+# function _findinitialpivots(f, localdims, nmaxpivots)::Vector{MultiIndex}
+#     pivots = MultiIndex[]
+#     for _ in 1:nmaxpivots
+#         pivot_ = [rand(1:d) for d in localdims]
+#         pivot_ = optfirstpivot(f, localdims, pivot_)
+#         if abs(f(pivot_)) == 0.0
+#             continue
+#         end
+#         push!(pivots, pivot_)
+#     end
+#     return pivots
+# end
 
 function contract_TCI(
     A::TensorTrain{ValueType,4},

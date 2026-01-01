@@ -320,20 +320,20 @@ function filltensor(
     )
 end
 
+# kronecker functions are now imported from T4ATensorCI, no need to redefine
+# function kronecker(
+#     Iset::Union{Vector{MultiIndex},IndexSet{MultiIndex}},
+#     localdim::Int
+# )
+#     return MultiIndex[[is..., j] for is in Iset, j in 1:localdim][:]
+# end
 
-function kronecker(
-    Iset::Union{Vector{MultiIndex},IndexSet{MultiIndex}},
-    localdim::Int
-)
-    return MultiIndex[[is..., j] for is in Iset, j in 1:localdim][:]
-end
-
-function kronecker(
-    localdim::Int,
-    Jset::Union{Vector{MultiIndex},IndexSet{MultiIndex}}
-)
-    return MultiIndex[[i, js...] for i in 1:localdim, js in Jset][:]
-end
+# function kronecker(
+#     localdim::Int,
+#     Jset::Union{Vector{MultiIndex},IndexSet{MultiIndex}}
+# )
+#     return MultiIndex[[i, js...] for i in 1:localdim, js in Jset][:]
+# end
 
 function setsitetensor!(
     tci::TensorCI2{ValueType}, b::Int, T::AbstractArray{ValueType,N}

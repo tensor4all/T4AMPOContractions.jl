@@ -26,7 +26,7 @@ ITensorMPS = "0.2, 0.3"
 ITensors = "0.6, 0.7, 0.8, 0.9"
 QuadGK = "2.9"
 Random = "1.10.0"
-T4ATensorCI = "0.11"
+T4ATensorCI = "0.12"
 julia = "1.6"
 MPI = "0.20.22"
 
