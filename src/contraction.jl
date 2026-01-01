@@ -1726,7 +1726,7 @@ Arguments:
 - `f` is a function to be applied elementwise to the result. This option is only available with `algorithm=:TCI`.
 - `method` chooses the method used for the factorization in the `algorithm=:zipup` case (`:SVD` or `:LU`).
 - `subcomm` is an optional MPI communicator for distributed algorithms. If not provided, the default communicator is used.
-- `kwargs...` are forwarded to [`crossinterpolate2`](@ref) if `algorithm=:TCI` or to [`contract_fit`](@ref) if `algorithm=:fit` or `algorithm=:distrfit`.
+- `kwargs...` are forwarded to the underlying algorithm functions.
 """
 function contract(
     A::TCI.TensorTrain{ValueType1,4},

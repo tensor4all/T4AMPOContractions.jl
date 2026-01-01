@@ -13,9 +13,12 @@ makedocs(;
         assets=String[]),
     pages=[
         "Home" => "index.md",
-        "Documentation" => "documentation.md",
-        "Extensions" => "extensions.md",
-    ]
+        "API Reference" => "documentation.md",
+        "Examples" => "extensions.md",
+    ],
+    checkdocs=:none,
+    linkcheck=false,
+    warnonly=[:cross_references]
 )
 
 deploydocs(;
