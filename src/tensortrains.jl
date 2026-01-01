@@ -783,6 +783,10 @@ function TCI.TensorTrain{ValueType,N}(tt::VidalTensorTrain{ValueType,N})::TCI.Te
     return TCI.TensorTrain{ValueType,N}(sitetensors)
 end
 
+function TCI.TensorTrain{ValueType,N}(tt::SiteTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
+    return TCI.TensorTrain{ValueType,N}(TCI.sitetensors(tt))
+end
+
 function TCI.TensorTrain(tt::SiteTensorTrain{ValueType,N})::TCI.TensorTrain{ValueType,N} where {ValueType,N}
     return TCI.TensorTrain{ValueType,N}(TCI.sitetensors(tt))
 end
