@@ -13,7 +13,7 @@ T4ATensorCI = "14428447-6903-48c7-83df-f2cb08af9918"
 [compat]
 MPI = "0.20.22"
 MPIPreferences = "0.1.11"
-Random = "1.10.0"
+Random = "1"
 T4ATensorCI = "0.12"
 julia = "1.6"
 
