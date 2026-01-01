@@ -590,12 +590,12 @@ function leftenvironment!(
 
         Ai = _contract(A_proj_left, Ai, (2,), (1,))
         Bi = _contract(B_proj_left, Bi, (2,), (1,))
-    end
+        end
 
     Ltmp = _contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,))
     Ltmp = _contract(Ltmp, Bi, (1,4,), (1,2,))
     Ls[i] = _contract(Ltmp, conj(Ci), (1,2,4,), (1,2,3,))
-end
+    end
 
 function rightenvironment!(
     Rs::Vector{Array{ValueType,3}},
@@ -619,7 +619,7 @@ function rightenvironment!(
 
         Ai = _contract(Ai, A_proj_right, (4,), (1,))
         Bi = _contract(Bi, B_proj_right, (4,), (1,))
-    end
+end
 
     Rtmp = _contract(conj(Ci), get(Rs, i+1, ones(ValueType, 1, 1, 1)), (4,), (3,))
     Rtmp = _contract(Bi, Rtmp, (3,4,), (3,5,))
@@ -656,7 +656,7 @@ function updatecore!(A::InverseTensorTrain{ValueType,4}, B::InverseTensorTrain{V
 
     Ltmp = _contract(_contract(get(Ls, i-1, ones(ValueType, 1, 1, 1)), Ai, (1,), (1,)), Bi, (1, 4), (1, 2))
     Rtmp = _contract(Bip1, _contract(Aip1, get(Rs, i+2, ones(ValueType, 1, 1, 1)), (4,), (1,)), (2, 4), (3, 4))
-    
+
     # Contract environments and factorize with diamond
     Ce = _contract(Ltmp, Rtmp, (3, 5), (3, 1))
     Ce = permutedims(Ce, (1, 2, 3, 5, 4, 6))
@@ -795,7 +795,7 @@ function contract_fit(
     
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
-
+    
     setcenter!(A, 1)
     setcenter!(B, 1)
     setcenter!(C, 1)
@@ -825,7 +825,7 @@ function contract_fit(
     # Precompute right environments
     for i in n:-1:3
         rightenvironment!(Rs, A, B, C, i; random_env, p)
-    end
+        end
     
     # It doesn't matter if we repeat update in 1 or n-1, those are negligible
     direction = :forward
@@ -883,7 +883,7 @@ function contract_fit(
             [ones(ValueType, 1, size(TCI.sitetensor(A, i), 2), size(TCI.sitetensor(B, i), 3), 1) for i in 1:length(A)]
         )
     end
-    
+        
     Rs = Vector{Array{ValueType, 3}}(undef, n)
     Ls = Vector{Array{ValueType, 3}}(undef, n)
 
@@ -914,14 +914,14 @@ function contract_fit(
 
                 tot_disc += disc
             end
-            direction = :forward    
+            direction = :forward
         end
 
         if tot_disc < tolerance
             break
         end
     end
-    
+
     return C
 end
 
@@ -957,7 +957,7 @@ function contract_distr_fit(
         synchronize_tt!(A)
         synchronize_tt!(B)
         synchronize_tt!(C)
-    end
+        end
 
     n = length(A)    
 
@@ -1120,7 +1120,7 @@ function contract_distr_fit(
                         MPI.Send(collect(size(Ci_local)), comm; dest=mpirank+1, tag=3*juliarank)
                         MPI.Send(collect(size(Yci_local)), comm; dest=mpirank+1, tag=3*juliarank+1)
                         MPI.Send(collect(size(Cip1_local)), comm; dest=mpirank+1, tag=3*juliarank+2)
-                        
+
                         MPI.Send(Ci_local, comm; dest=mpirank+1, tag=3*juliarank)
                         MPI.Send(Yci_local, comm; dest=mpirank+1, tag=3*juliarank+1)
                         MPI.Send(Cip1_local, comm; dest=mpirank+1, tag=3*juliarank+2)
@@ -1154,7 +1154,7 @@ function contract_distr_fit(
                         Ci_local = Array{ValueType,4}(undef, sizes...)
                         Yci_local = Array{Float64,2}(undef, sizes1...)
                         Cip1_local = Array{ValueType,4}(undef, sizes2...)
-                        
+
                         MPI.Recv!(Ci_local, comm; source=mpirank-1, tag=3*(juliarank-1))
                         MPI.Recv!(Yci_local, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
                         MPI.Recv!(Cip1_local, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
@@ -1170,7 +1170,7 @@ function contract_distr_fit(
             # Add the boundary disc if it was computed
             if MPI.Initialized() && ((juliarank % 2 == sweep % 2 && juliarank != nprocs) || (juliarank % 2 != sweep % 2 && juliarank != 1))
                 # disc was redefined in MPI block for boundary update, add it
-                tot_disc += disc
+            tot_disc += disc
             end
 
             converged = tot_disc < tolerance
@@ -1178,9 +1178,9 @@ function contract_distr_fit(
             if global_converged && sweep >= nprocs
                 break
             end
+            end
         end
-    end
-    
+
     # Redistribute the tensor train among the processes.
     if synchedoutput
         all_sitetensors = Vector{Array{ValueType,4}}(undef, n)
@@ -1205,8 +1205,8 @@ function contract_distr_fit(
                     if i < n
                         push!(send_reqs, MPI.Isend(collect(size(inversesingularvalue(C, i))), comm; dest=dest-1, tag=send_tag+2))
                         push!(send_reqs, MPI.Isend(inversesingularvalue(C, i), comm; dest=dest-1, tag=send_tag+3))
-                    end
-                end
+            end
+        end
             end
         end
 
@@ -1229,9 +1229,9 @@ function contract_distr_fit(
                         MPI.Recv!(all_inversesingularvalues[i], comm; source=source-1, tag=recv_tag+3)
                     end
                 end
-            end
         end
-        
+    end
+
 
         # TODO, this should be 1:n, I don't know whether partitions[juliarank] is correct
         return InverseTensorTrain{ValueType,4}(all_sitetensors, all_inversesingularvalues, partitions[juliarank])
@@ -1286,7 +1286,7 @@ function contract_distr_fit(
         synchronize_tt!(A)
         synchronize_tt!(B)
         synchronize_tt!(C)
-    end
+            end
 
     n = length(A)
 
@@ -1604,7 +1604,7 @@ function contract_distr_fit(
                 else
                     for i in my_old_last:my_last-1
                         leftenvironment!(Ls, A, B, C, i; random_env, p)
-                    end
+                end
                 end
 
                 Rs[my_last+2] = MPI.recv(comm; source = juliapartner - 1, tag = 2*juliapartner + 1)
@@ -1672,7 +1672,7 @@ function contract_distr_fit(
         # Rank 1 already has the full TT from tree reduction: broadcast it to everyone.
         received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
         for i in 1:n
-            if juliarank == 1
+        if juliarank == 1
                 Ci_local = TCI.sitetensor(C, i)
                 sz = Int[size(Ci_local, 1), size(Ci_local, 2), size(Ci_local, 3), size(Ci_local, 4)]
                 buf = Ci_local
@@ -1772,9 +1772,9 @@ function contract(
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
 )::SiteTensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
-    if f !== nothing
+        if f !== nothing
         error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
-    end
+        end
     
     mpo = if algorithm === :fit
         contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
@@ -1804,9 +1804,9 @@ function contract(
     subcomm::Union{Nothing, MPI.Comm}=nothing,
     kwargs...
 )::InverseTensorTrain{promote_type(ValueType1,ValueType2),4} where {ValueType1,ValueType2}
-    if f !== nothing
+        if f !== nothing
         error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
-    end
+        end
     
     if algorithm === :fit
         mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
