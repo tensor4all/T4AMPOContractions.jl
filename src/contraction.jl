@@ -1068,6 +1068,7 @@ function contract_distr_fit(
 
         for sweep in 1:nsweeps
             tot_disc = 0.0
+            disc = 0.0  # Initialize disc to avoid undefined variable
 
             if sweep % 2 == juliarank % 2
                 direction = :forward
@@ -1112,17 +1113,17 @@ function contract_distr_fit(
                         disc = updatecore!(A, B, C, last_site, Ls, Rs;
                             method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, random_update)
 
-                        Ci = TCI.sitetensor(C, last_site)
-                        Yci = inversesingularvalue(C, last_site)
-                        Cip1 = TCI.sitetensor(C, last_site+1)
+                        Ci_local = TCI.sitetensor(C, last_site)
+                        Yci_local = inversesingularvalue(C, last_site)
+                        Cip1_local = TCI.sitetensor(C, last_site+1)
 
-                        MPI.Send(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
-                        MPI.Send(collect(size(Yci)), comm; dest=mpirank+1, tag=3*juliarank+1)
-                        MPI.Send(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+2)
+                        MPI.Send(collect(size(Ci_local)), comm; dest=mpirank+1, tag=3*juliarank)
+                        MPI.Send(collect(size(Yci_local)), comm; dest=mpirank+1, tag=3*juliarank+1)
+                        MPI.Send(collect(size(Cip1_local)), comm; dest=mpirank+1, tag=3*juliarank+2)
                         
-                        MPI.Send(Ci, comm; dest=mpirank+1, tag=3*juliarank)
-                        MPI.Send(Yci, comm; dest=mpirank+1, tag=3*juliarank+1)
-                        MPI.Send(Cip1, comm; dest=mpirank+1, tag=3*juliarank+2)
+                        MPI.Send(Ci_local, comm; dest=mpirank+1, tag=3*juliarank)
+                        MPI.Send(Yci_local, comm; dest=mpirank+1, tag=3*juliarank+1)
+                        MPI.Send(Cip1_local, comm; dest=mpirank+1, tag=3*juliarank+2)
 
                         rightenvironment!(Rs, A, B, C, last_site+1; random_env, p)
                     end
@@ -1150,22 +1151,27 @@ function contract_distr_fit(
                         MPI.Recv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
                         MPI.Recv!(sizes2, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
                         
-                        Ci = Array{ValueType,4}(undef, sizes...)
-                        Yci = Array{Float64,2}(undef, sizes1...)
-                        Cip1 = Array{ValueType,4}(undef, sizes2...)
+                        Ci_local = Array{ValueType,4}(undef, sizes...)
+                        Yci_local = Array{Float64,2}(undef, sizes1...)
+                        Cip1_local = Array{ValueType,4}(undef, sizes2...)
                         
-                        MPI.Recv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        MPI.Recv!(Yci, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
-                        MPI.Recv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
+                        MPI.Recv!(Ci_local, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(Yci_local, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        MPI.Recv!(Cip1_local, comm; source=mpirank-1, tag=3*(juliarank-1)+2)
 
-                        settwositetensors!(C, first_site-1, Ci, Yci, Cip1)
+                        settwositetensors!(C, first_site-1, Ci_local, Yci_local, Cip1_local)
 
                         leftenvironment!(Ls, A, B, C, first_site-1; random_env, p)
                     end
                 end
             end
-
-            tot_disc += disc
+            # disc is already defined in the if/else blocks above and accumulated in tot_disc
+            # If MPI.Initialized() block executed, disc may have been redefined for boundary updates
+            # Add the boundary disc if it was computed
+            if MPI.Initialized() && ((juliarank % 2 == sweep % 2 && juliarank != nprocs) || (juliarank % 2 != sweep % 2 && juliarank != 1))
+                # disc was redefined in MPI block for boundary update, add it
+                tot_disc += disc
+            end
 
             converged = tot_disc < tolerance
             global_converged = MPI.Allreduce(converged, MPI.LAND, comm)
@@ -1398,6 +1404,7 @@ function contract_distr_fit(
 
         for sweep in 1:nsweeps
             tot_disc = 0.0
+            disc = 0.0  # Initialize disc to avoid undefined variable
             time_update = time_ns()
 
             if sweep % 2 == juliarank % 2
@@ -1447,16 +1454,16 @@ function contract_distr_fit(
                         disc = updatecore!(A, B, C, last_site, Ls, Rs;
                             method, tolerance=tolerance/((n-1)*nprocs), maxbonddim, direction=:backward, random_update)
 
-                        Ci = TCI.sitetensor(C, last_site)
-                        Cip1 = TCI.sitetensor(C, last_site+1)
+                        Ci_local = TCI.sitetensor(C, last_site)
+                        Cip1_local = TCI.sitetensor(C, last_site+1)
 
-                        reqs = MPI.Isend(collect(size(Ci)), comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(collect(size(Cip1)), comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs = MPI.Isend(collect(size(Ci_local)), comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(collect(size(Cip1_local)), comm; dest=mpirank+1, tag=3*juliarank+1)
 
                         MPI.Waitall([reqs, reqs1])
 
-                        reqs = MPI.Isend(Ci, comm; dest=mpirank+1, tag=3*juliarank)
-                        reqs1 = MPI.Isend(Cip1, comm; dest=mpirank+1, tag=3*juliarank+1)
+                        reqs = MPI.Isend(Ci_local, comm; dest=mpirank+1, tag=3*juliarank)
+                        reqs1 = MPI.Isend(Cip1_local, comm; dest=mpirank+1, tag=3*juliarank+1)
 
                         MPI.Waitall([reqs, reqs1])
                         rightenvironment!(Rs, A, B, C, last_site+1; random_env, p)
@@ -1483,20 +1490,23 @@ function contract_distr_fit(
                         MPI.Recv!(sizes, comm; source=mpirank-1, tag=3*(juliarank-1))
                         MPI.Recv!(sizes1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
                                                 
-                        Ci = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
-                        Cip1 = ones(ValueType, sizes1[1], sizes1[2], sizes1[3], sizes1[4])
+                        Ci_local = ones(ValueType, sizes[1], sizes[2], sizes[3], sizes[4])
+                        Cip1_local = ones(ValueType, sizes1[1], sizes1[2], sizes1[3], sizes1[4])
 
-                        MPI.Recv!(Ci, comm; source=mpirank-1, tag=3*(juliarank-1))
-                        MPI.Recv!(Cip1, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
+                        MPI.Recv!(Ci_local, comm; source=mpirank-1, tag=3*(juliarank-1))
+                        MPI.Recv!(Cip1_local, comm; source=mpirank-1, tag=3*(juliarank-1)+1)
 
 
-                        settwositetensors!(C, first_site-1, Ci, Cip1)
+                        settwositetensors!(C, first_site-1, Ci_local, Cip1_local)
                         movecenterright!(C)
 
                         leftenvironment!(Ls, A, B, C, first_site-1; random_env, p)
                     end
                 end
             end
+            # disc is already defined in the if/else blocks above, but ensure it's defined
+            # (it may not be if MPI.Initialized() block executed and didn't define it)
+            # disc is already accumulated in tot_disc in the loops above, so this is just for safety
             tot_disc += disc
 
             converged = tot_disc < tolerance
@@ -1663,17 +1673,17 @@ function contract_distr_fit(
         received_sitetensors = Vector{Array{ValueType,4}}(undef, n)
         for i in 1:n
             if juliarank == 1
-                Ci = TCI.sitetensor(C, i)
-                sz = Int[size(Ci, 1), size(Ci, 2), size(Ci, 3), size(Ci, 4)]
+                Ci_local = TCI.sitetensor(C, i)
+                sz = Int[size(Ci_local, 1), size(Ci_local, 2), size(Ci_local, 3), size(Ci_local, 4)]
+                buf = Ci_local
             else
                 sz = Vector{Int}(undef, 4)
+                buf = nothing  # Will be allocated below
             end
             # Broadcast size
             MPI.Bcast!(sz, comm; root=0)
             # Broadcast data
-            if juliarank == 1
-                buf = Ci
-            else
+            if juliarank != 1
                 buf = Array{ValueType,4}(undef, sz...)
             end
             MPI.Bcast!(buf, comm; root=0)
@@ -1766,10 +1776,10 @@ function contract(
         error("Fit/distributed fit contraction cannot use a function. Use algorithm=:TCI with TCI.TensorTrain instead.")
     end
     
-    if algorithm === :fit
-        mpo = contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
+    mpo = if algorithm === :fit
+        contract_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, kwargs...)
     elseif algorithm === :distrfit
-        mpo = contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
+        contract_distr_fit(A, B; tolerance=tolerance, maxbonddim=maxbonddim, method=method, subcomm=subcomm, kwargs...)
     elseif algorithm === :TCI || algorithm === :naive || algorithm === :zipup
         # Convert to TensorTrain for these algorithms
         SiteTensorTrain{promote_type(ValueType1,ValueType2),4}(

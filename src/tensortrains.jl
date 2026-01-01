@@ -574,6 +574,29 @@ function SiteTensorTrain(tt::TCI.AbstractTensorTrain{ValueType}, center::Int, pa
     return SiteTensorTrain{ValueType, ndims(TCI.sitetensors(tt)[1])}(tt, center, partition)
 end
 
+# Convert InverseTensorTrain to SiteTensorTrain
+function SiteTensorTrain{ValueType,N}(tt::InverseTensorTrain{ValueType,N}, center::Int, partition::AbstractRange{<:Integer})::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    # Convert InverseTensorTrain to TensorTrain first, then to SiteTensorTrain
+    tt_tensor = TCI.TensorTrain{ValueType,N}(tt)
+    return SiteTensorTrain{ValueType,N}(tt_tensor, center, partition)
+end
+
+function SiteTensorTrain{ValueType,N}(tt::InverseTensorTrain{ValueType,N}, center::Int)::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    n = length(tt)
+    return SiteTensorTrain{ValueType,N}(tt, center, 1:n)
+end
+
+function SiteTensorTrain{ValueType,N}(tt::InverseTensorTrain{ValueType,N})::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    n = length(tt)
+    return SiteTensorTrain{ValueType,N}(tt, 1, 1:n)
+end
+
+# Base.convert for InverseTensorTrain to SiteTensorTrain
+function Base.convert(::Type{SiteTensorTrain{ValueType,N}}, tt::InverseTensorTrain{ValueType,N})::SiteTensorTrain{ValueType,N} where {ValueType,N}
+    n = length(tt)
+    return SiteTensorTrain{ValueType,N}(tt, 1, 1:n)
+end
+
 # Type conversion: change element type of a SiteTensorTrain
 function SiteTensorTrain{ValueType2,N}(tt::SiteTensorTrain{ValueType1,N})::SiteTensorTrain{ValueType2,N} where {ValueType1,ValueType2,N}
     return SiteTensorTrain{ValueType2,N}(Array{ValueType2}.(TCI.sitetensors(tt)), center(tt), partition(tt))
