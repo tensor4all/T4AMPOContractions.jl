@@ -15,7 +15,7 @@ T4ATensorTrain = "ec6ec972-96ae-4a21-b859-3911b77e305f"
 
 [compat]
 Aqua = "0.8"
-JET = "0.11"
+JET = "0.10"
 MPI = "0.20"
 MPIPreferences = "0.1"
 Random = "1"
